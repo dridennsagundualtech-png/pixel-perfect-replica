@@ -33,7 +33,9 @@ export function loadAudioEnhanceSettings(): AudioEnhanceSettings {
   }
 }
 
-export function saveAudioEnhanceSettings(patch: Partial<AudioEnhanceSettings>): AudioEnhanceSettings {
+export function saveAudioEnhanceSettings(
+  patch: Partial<AudioEnhanceSettings>,
+): AudioEnhanceSettings {
   const next = { ...loadAudioEnhanceSettings(), ...patch };
   try {
     window.localStorage.setItem(KEY, JSON.stringify(next));
@@ -49,8 +51,7 @@ export function buildAudioEnhanceFilter(s: AudioEnhanceSettings | undefined): st
   const k = { low: 0, medium: 1, high: 2 }[s.strength];
   const f: string[] = [];
   if (s.noiseReduction) f.push(`afftdn=nr=${[6, 12, 20][k]}:nf=-40`);
-  if (s.voiceClarity)
-    f.push("highpass=f=80", `equalizer=f=3000:t=q:w=1:g=${[2, 3, 5][k]}`);
+  if (s.voiceClarity) f.push("highpass=f=80", `equalizer=f=3000:t=q:w=1:g=${[2, 3, 5][k]}`);
   if (s.loudnessNormalize) f.push("loudnorm=I=-14:TP=-1.5:LRA=11");
   return f.join(",");
 }

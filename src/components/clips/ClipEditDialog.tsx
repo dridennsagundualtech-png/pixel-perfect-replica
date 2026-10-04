@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FlipHorizontal2, Loader2, Maximize2, Music, Pause, Play, RotateCcw, Volume2, VolumeX, X } from "lucide-react";
+import {
+  FlipHorizontal2,
+  Loader2,
+  Maximize2,
+  Music,
+  Pause,
+  Play,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 import type { BackgroundMusic } from "@/lib/video/export-extras";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -429,9 +440,7 @@ export function ClipEditDialog({
                             <span
                               key={i}
                               className={
-                                highlightOn && i === cue.activeWordIndex
-                                  ? "text-accent"
-                                  : undefined
+                                highlightOn && i === cue.activeWordIndex ? "text-accent" : undefined
                               }
                             >
                               {w.text.trim()}{" "}
@@ -469,7 +478,12 @@ export function ClipEditDialog({
               <Button size="sm" variant="ghost" onClick={restart} disabled={!videoUrl}>
                 <RotateCcw className="size-4" /> Restart
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setMuted((m) => !m)} disabled={!videoUrl}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setMuted((m) => !m)}
+                disabled={!videoUrl}
+              >
                 {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
                 {muted ? "Unmute" : "Mute"}
               </Button>
@@ -733,7 +747,10 @@ export function ClipEditDialog({
 
             <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs">
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
-                <Info label="Original range" value={`${formatTimecode(start)} – ${formatTimecode(end)}`} />
+                <Info
+                  label="Original range"
+                  value={`${formatTimecode(start)} – ${formatTimecode(end)}`}
+                />
                 {typeof clip.score === "number" ? (
                   <Info label="Rule Score" value={String(clip.score)} />
                 ) : null}

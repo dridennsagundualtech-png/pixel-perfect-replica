@@ -96,12 +96,14 @@ describe("rule engine", () => {
       }
   });
   it("is deterministic", async () => {
-    expect(JSON.stringify((await run(sentences(RICH)).candidates)).toBe(JSON.stringify(await run(sentences(RICH))).candidates));
+    const a = await run(sentences(RICH));
+    const b = await run(sentences(RICH));
+    expect(JSON.stringify(a.candidates)).toBe(JSON.stringify(b.candidates));
   });
   it("handles empty / malformed transcripts", async () => {
     expect((await runDetection(undefined, rules, { now: NOW })).status).toBe("no-transcript");
     expect((await runDetection({ segments: [] }, rules, { now: NOW })).status).toBe("empty-transcript");
-    const v = validateTranscript({ segments: [{ id: "x", startSec: 5, endSec: 2, text: "bad" }, seg("ok", 0, 1, "fine")] } as never);
+    const v = validateTranscript([{ id: "x", startSec: 5, endSec: 2, text: "bad" }, seg("ok", 0, 1, "fine")]);
     expect(v.segments.map((s) => s.id)).toEqual(["ok"]);
   });
   it("reports invalid rules", async () => {
