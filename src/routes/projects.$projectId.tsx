@@ -1229,10 +1229,13 @@ function WorkspacePage() {
               clip={editing}
               maxSec={project.video?.durationSec}
               videoUrl={videoUrl}
+              videoFile={file}
               hasVideoFile={!!file}
               segments={segments}
-              captionsEnabled={captionSettings.enabled}
+              captionSettings={captionSettings}
+              onCaptionSettingsChange={updateCaptionSettings}
               cleanupSettings={cleanupSettings}
+              onCleanupSettingsChange={updateCleanupSettings}
               onClose={() => setEditing(null)}
               onSave={saveClip}
               onExport={(c) => void exportVideo(c)}
