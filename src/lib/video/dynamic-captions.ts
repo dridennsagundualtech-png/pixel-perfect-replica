@@ -9,7 +9,15 @@
 import type { TranscriptSegment, TranscriptWord } from "@/lib/detection/transcript";
 import { CAPTION_FONT_NAME, SHORT_HEIGHT, SHORT_WIDTH } from "./short-captions";
 
-export type CaptionStyleId = "classic" | "highlight" | "clean" | "impact" | "karaoke" | "minimal";
+export type CaptionStyleId =
+  | "classic"
+  | "highlight"
+  | "clean"
+  | "impact"
+  | "karaoke"
+  | "minimal"
+  | "bold"
+  | "podcast";
 export type CaptionPosition = "top" | "center" | "lower" | "bottom";
 export type CaptionSize = "small" | "medium" | "large";
 
@@ -38,6 +46,10 @@ export interface CaptionSettings {
   groupPauseSec?: number | undefined;
   /** ASS FontName — built-in Anton or your custom font family name. */
   fontFamily?: string | undefined;
+  /** Capitalization override; undefined = style default. */
+  uppercase?: boolean | undefined;
+  /** Dark box behind the text instead of an outline. */
+  background?: boolean | undefined;
 }
 
 export const DEFAULT_CAPTION_SETTINGS: CaptionSettings = {
@@ -142,6 +154,32 @@ export const CAPTION_PRESETS: Record<CaptionStyleId, CaptionPreset> = {
     primary: "&H00FFFFFF",
     inactive: "&H00E0E0E0",
     active: "&H00FFFFFF",
+    activeScale: 100,
+    uppercase: false,
+    maxWordsCap: 5,
+  },
+  bold: {
+    label: "Bold",
+    description: "Heavy white text, thick outline",
+    fontSize: 68,
+    outline: 7,
+    shadow: 3,
+    primary: "&H00FFFFFF",
+    inactive: "&H00FFFFFF",
+    active: "&H0000D4FF",
+    activeScale: 110,
+    uppercase: true,
+    maxWordsCap: 4,
+  },
+  podcast: {
+    label: "Podcast",
+    description: "Readable sentence case, longer lines",
+    fontSize: 48,
+    outline: 3,
+    shadow: 1,
+    primary: "&H00FFFFFF",
+    inactive: "&H00E6E6E6",
+    active: "&H0066E0FF",
     activeScale: 100,
     uppercase: false,
     maxWordsCap: 5,
@@ -487,7 +525,7 @@ export function cueToAssText(cue: DynamicCaptionCue, settings: CaptionSettings):
   if (settings.highlightColor?.trim()) p.active = settings.highlightColor.trim();
   const maxChars = maxCharsPerLine(settings);
   const tokens = (cue.words.length ? cue.words.map((w) => w.text) : cue.text.split(" "))
-    .map((t) => clean(p.uppercase ? t.toUpperCase() : t))
+    .map((t) => clean((settings.uppercase ?? p.uppercase) ? t.toUpperCase() : t))
     .filter(Boolean);
   const lines = wrapWords(tokens, maxChars);
   let idx = 0;
@@ -510,25 +548,46 @@ export function cueToAssText(cue: DynamicCaptionCue, settings: CaptionSettings):
 }
 
 /** Full ASS script for dynamic captions with the chosen style and position. */
-export function buildDynamicAss(cues: DynamicCaptionCue[], settings: CaptionSettings): string {
+/**
+ * Layout for a non-9:16 output frame. Only sizes/margins scale; cue timing is
+ * untouched. Default (720×1280) returns factor 1 so vertical output is unchanged.
+ */
+export function captionLayoutScale(width: number, height: number) {
+  if (width === SHORT_WIDTH && height === SHORT_HEIGHT) return { font: 1, x: 1, y: 1 };
+  return {
+    font: Math.min(width / SHORT_WIDTH, (height / SHORT_HEIGHT) * 1.35),
+    x: width / SHORT_WIDTH,
+    y: height / SHORT_HEIGHT,
+  };
+}
+
+export function buildDynamicAss(
+  cues: DynamicCaptionCue[],
+  settings: CaptionSettings,
+  frame: { width: number; height: number } = { width: SHORT_WIDTH, height: SHORT_HEIGHT },
+): string {
+  const k = captionLayoutScale(frame.width, frame.height);
   const styleId = resolveCaptionStyle(settings.style);
   const p = CAPTION_PRESETS[styleId];
   const pos = POSITION_LAYOUT[settings.position] ?? POSITION_LAYOUT.lower;
-  const size = Math.round(p.fontSize * SIZE_SCALE[settings.size]);
-  const outline = settings.outline != null ? settings.outline : p.outline;
-  const shadow = settings.shadow != null ? settings.shadow : p.shadow;
+  const size = Math.round(p.fontSize * SIZE_SCALE[settings.size] * k.font);
+  const outline = Math.round((settings.outline != null ? settings.outline : p.outline) * k.font);
+  const shadow = Math.round((settings.shadow != null ? settings.shadow : p.shadow) * k.font);
   const primary = settings.textColor?.trim() || p.primary;
+  const border = settings.background ? 3 : 1;
+  const side = Math.round(SIDE_MARGIN * k.x);
+  const marginV = Math.round(pos.marginV * k.y);
   const header = [
     "[Script Info]",
     "ScriptType: v4.00+",
-    `PlayResX: ${SHORT_WIDTH}`,
-    `PlayResY: ${SHORT_HEIGHT}`,
+    `PlayResX: ${frame.width}`,
+    `PlayResY: ${frame.height}`,
     "WrapStyle: 0",
     "ScaledBorderAndShadow: yes",
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    `Style: Default,${resolveCaptionFontName(settings)},${size},${primary},${primary},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,${outline},${shadow},${pos.alignment},${SIDE_MARGIN},${SIDE_MARGIN},${pos.marginV},1`,
+    `Style: Default,${resolveCaptionFontName(settings)},${size},${primary},${primary},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,${border},${outline},${shadow},${pos.alignment},${side},${side},${marginV},1`,
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
