@@ -25,3 +25,6 @@
 - Transcription uses `onnx-community/whisper-base_timestamped` (same base weights, exported with cross-attentions) and runs a second `return_timestamps: "word"` pass; `segment.words` is optional real Whisper timing, never estimated, and a failed word pass never fails the transcript.
 - Dynamic Short captions live in `src/lib/video/dynamic-captions.ts` (pure, checked by `bun scripts/caption-check.ts`): only valid Whisper words are grouped and highlighted; segments without words fall back to static segment cues; settings persist via `caption-settings.ts` (localStorage).
 - Cleanup cuts keep Smart Reframe: renderer rebases the clip-relative ReframeTrack through the EditPlan (`rebaseReframeTrack`) and crops once after concat, sharing the output clock with captions; check with `bun scripts/reframe-cleanup-check.ts`.
+- Batch export queue logic lives in pure `src/lib/batch-export.ts` (`runBatch`) so one failed clip never stops a batch and it is unit-tested; the page only wires UI state.
+- Automated tests: `bun run test` (vitest, `tests/`) covers detection, Best Moments, captions, edit timeline, reframe rebasing, batch and Ollama fallback; keep it green.
+- Export extras (flip, background music, audio enhance) run in `renderClip`: flip is applied before captions; music/enhance is a post audio pass that falls back to original audio on failure.
