@@ -834,7 +834,7 @@ function WorkspacePage() {
           try {
             const { generateClipThumbnail } = await import("@/lib/video/thumbnail");
             const { trackSubject } = await import("@/lib/video/subject-tracker");
-            let clips = run.candidates;
+            const clips = run.candidates;
             for (const c of run.candidates) {
               try {
                 const reframe = await trackSubject(f, {
