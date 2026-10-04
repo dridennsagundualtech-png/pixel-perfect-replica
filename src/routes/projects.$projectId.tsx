@@ -5,7 +5,15 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { ClipCard } from "@/components/clips/ClipCard";
 import { BestMomentsPanel } from "@/components/clips/BestMomentsPanel";
+import { AudioEnhancePanel } from "@/components/clips/AudioEnhancePanel";
+import {
+  loadAudioEnhanceSettings,
+  saveAudioEnhanceSettings,
+  type AudioEnhanceSettings,
+} from "@/lib/video/audio-enhance";
+import { OllamaSettingsPanel } from "@/components/detection/OllamaSettingsPanel";
 import { selectBestMoments } from "@/lib/detection/best-moments";
+import { buildHighlightReel } from "@/lib/detection/highlight-reel";
 import { BatchExportPanel, type BatchQueueItem } from "@/components/clips/BatchExportPanel";
 import { ClipEditDialog } from "@/components/clips/ClipEditDialog";
 import { clipToSrt, downloadText, segmentsInRange } from "@/lib/clip-export";
@@ -111,6 +119,11 @@ function WorkspacePage() {
   });
   const renderAbortRef = useRef<AbortController | null>(null);
   const [captionSettings, updateCaptionSettings] = useCaptionSettings();
+  const [audioEnhance, setAudioEnhance] = useState<AudioEnhanceSettings>(() =>
+    loadAudioEnhanceSettings(),
+  );
+  const updateAudioEnhance = (patch: Partial<AudioEnhanceSettings>) =>
+    setAudioEnhance(saveAudioEnhanceSettings(patch));
   const [cleanupSettings, updateCleanupSettings] = useCleanupSettings();
   useEffect(() => () => renderAbortRef.current?.abort(), []);
 
@@ -261,16 +274,15 @@ function WorkspacePage() {
     }
   };
 
-  const analyze = () => {
+  const analyze = async () => {
+    if (analyzing) return;
     setAnalyzing(true);
-    // Yield a frame so "Analyzing transcript..." renders before the synchronous run.
-    setTimeout(() => {
-      try {
-        runAnalysis();
-      } finally {
-        setAnalyzing(false);
-      }
-    }, 30);
+    await new Promise((r) => setTimeout(r, 30));
+    try {
+      await runAnalysis();
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const segments = project.transcript?.segments ?? [];
@@ -278,6 +290,126 @@ function WorkspacePage() {
     project.clips.filter((c) => c.status !== "rejected"),
     { maxRecommendations: bestMomentsMax },
   );
+
+
+  const exportHighlightReel = async () => {
+    if (!file) {
+      toast.error("Select the original video file before exporting.");
+      return;
+    }
+    if (!project.clips.length) {
+      toast.error("Analyze the video first so there are moments to include.");
+      return;
+    }
+    if (renderingClipId) {
+      toast.error("Wait for the current export to finish.");
+      return;
+    }
+    const reel = buildHighlightReel(project.clips, {
+      maxMoments: 5,
+      targetDurationSec: 45,
+      maxDurationSec: 90,
+    });
+    if (!reel || !reel.plan.segments.length) {
+      toast.error("Not enough distinct moments to build a highlight reel.");
+      return;
+    }
+    const controller = new AbortController();
+    renderAbortRef.current = controller;
+    setRenderingClipId("highlight-reel");
+    setRenderState({ label: "Building highlight reel...", progress: null });
+    toast.message("Highlight reel started", {
+      description: reel.message + " — keep this tab open. Usually 2–5 min for ~45s of highlights.",
+    });
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    try {
+      let tick = 0;
+      heartbeat = setInterval(() => {
+        tick += 1;
+        // Fake slow crawl 0→8% so you know the tab is alive while FFmpeg loads/encodes
+        setRenderState((s) => {
+          if (s.progress != null && s.progress >= 0.08) return s;
+          return {
+            label: s.label.includes("Encoding") || s.label.includes("Rendering")
+              ? `Still encoding… (${tick * 5}s elapsed, keep tab open)`
+              : s.label,
+            progress: Math.min(0.08, (tick / 40) * 0.08),
+          };
+        });
+      }, 5000);
+      const { renderClip, downloadBlob } = await import("@/lib/video/local-video-renderer");
+      const { buildCaptionCues, buildDynamicAss } = await import("@/lib/video/dynamic-captions");
+      const { rebaseWords } = await import("@/lib/video/edit-timeline");
+      const { wordsInClip } = await import("@/lib/video/filler-detect");
+      const segs = project.transcript?.segments ?? [];
+      const first = reel.plan.segments[0]!;
+      const last = reel.plan.segments[reel.plan.segments.length - 1]!;
+
+      // Captions: collect words from each moment, rebase onto the stitched timeline.
+      const allWords = reel.moments.flatMap((m) =>
+        wordsInClip(segs, m.startSec, m.endSec),
+      );
+      const rebased = rebaseWords(reel.plan, allWords);
+      let captionAss: string | undefined;
+      if (captionSettings.enabled && rebased.length) {
+        const fakeSegs = [
+          {
+            id: "highlight-reel",
+            startSec: 0,
+            endSec: reel.plan.outputDurationSec,
+            text: rebased.map((w) => w.text).join(" "),
+            words: rebased,
+          },
+        ];
+        const cues = buildCaptionCues(fakeSegs, 0, reel.plan.outputDurationSec, captionSettings);
+        captionAss = cues.length ? buildDynamicAss(cues, captionSettings) : undefined;
+      }
+
+      setRenderState({ label: "Rendering highlight reel (encoding)…", progress: 0 });
+      toast.message("Encoding highlight reel", { description: "Stitching moments — please wait." });
+      const name = `${(project.name || "ClipPilot").replace(/[^a-zA-Z0-9]+/g, "_").slice(0, 30)}_Highlight_Reel.mp4`;
+      const result = await renderClip({
+        file,
+        startSec: first.sourceStartSec,
+        endSec: last.sourceEndSec,
+        sourceDurationSec: project.video?.durationSec,
+        outputName: name,
+        signal: controller.signal,
+        vertical: true,
+        // Center crop only — smart reframe + multi-cut is too heavy in-browser.
+        reframe: { source: "center", points: [{ timeSec: 0, x: 0.5, confidence: 0 }] },
+        editPlan: reel.plan,
+        captionAss,
+        // Audio enhance off for reel reliability
+        onProgress: (p) =>
+          setRenderState(
+            p.stage === "loading"
+              ? { label: "Loading video engine...", progress: null }
+              : p.stage === "finalizing"
+                ? { label: "Finalizing highlight reel...", progress: 1 }
+                : {
+                    label: `Highlight reel... ${Math.round((p.progress ?? 0) * 100)}%`,
+                    progress: p.progress ?? 0,
+                  },
+          ),
+      });
+      downloadBlob(result.file, name);
+      toast.success("Highlight reel exported", {
+        description: `${reel.message} · ${name}`,
+      });
+    } catch (err: unknown) {
+      if (controller.signal.aborted) toast.message("Highlight reel cancelled");
+      else {
+        const e = err as { message?: string; code?: string };
+        toast.error(e?.message ?? "Highlight reel export failed.");
+      }
+    } finally {
+      if (heartbeat) clearInterval(heartbeat);
+      setRenderingClipId(null);
+      setRenderState({ label: "", progress: null });
+      renderAbortRef.current = null;
+    }
+  };
 
   const rejectClip = (clip: ClipCandidate) => {
     const before = project.clips;
@@ -443,6 +575,7 @@ function WorkspacePage() {
         reframe,
         editPlan: plan.isIdentity ? undefined : plan,
         captionAss,
+        audioEnhance,
         onProgress: (p) =>
           setRenderState(
             p.stage === "loading"
@@ -684,6 +817,7 @@ function WorkspacePage() {
       reframe,
       editPlan: plan.isIdentity ? undefined : plan,
       captionAss,
+      audioEnhance,
       onProgress: (p) =>
         onProg(
           p.stage === "loading"
@@ -712,8 +846,15 @@ function WorkspacePage() {
   };
 
 
-  const runAnalysis = () => {
-    const run = runDetection(project.transcript, project.rules, {
+  const runAnalysis = async () => {
+    try {
+      const { setRankingProvider } = await import("@/lib/detection/ranking-provider");
+      const { resolveRankingProvider } = await import("@/lib/detection/ollama-ranking-provider");
+      setRankingProvider(resolveRankingProvider());
+    } catch (e) {
+      console.warn("ranking provider setup", e);
+    }
+    const run = await runDetection(project.transcript, project.rules, {
       mode: project.mode,
       projectId: project.id,
       ai: project.ai,
@@ -910,6 +1051,7 @@ function WorkspacePage() {
                 <TabsTrigger value="rules">⚙️ Rule settings</TabsTrigger>
               </TabsList>
               <TabsContent value="ai" className="pt-6">
+                <OllamaSettingsPanel />
                 <AiSettingsPanel
                   settings={project.ai}
                   onChange={(ai) => updateProject(project.id, { ai })}
@@ -926,7 +1068,7 @@ function WorkspacePage() {
 
           <section className="panel space-y-4 p-6">
             <div className="flex flex-wrap items-center gap-4">
-              <Button size="lg" disabled={!canAnalyze} onClick={analyze}>
+              <Button size="lg" disabled={!canAnalyze} onClick={() => void analyze()}>
                 {analyzing ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
@@ -967,7 +1109,10 @@ function WorkspacePage() {
             <h2 className="mb-4 font-display text-lg font-semibold">Potential clips</h2>
             {project.clips.length > 0 ? (
               <>
-                <CaptionSettingsPanel settings={captionSettings} onChange={updateCaptionSettings} />
+                <div className="panel p-4 mb-3">
+                <AudioEnhancePanel settings={audioEnhance} onChange={updateAudioEnhance} />
+              </div>
+              <CaptionSettingsPanel settings={captionSettings} onChange={updateCaptionSettings} />
                 <CleanupSettingsPanel
                   settings={cleanupSettings}
                   onChange={updateCleanupSettings}
@@ -999,6 +1144,70 @@ function WorkspacePage() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
 
+                
+                
+                {renderingClipId ? (
+                  <div className="mb-3 rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium">
+                          {renderingClipId === "highlight-reel"
+                            ? "Exporting highlight reel"
+                            : renderingClipId === "batch"
+                              ? "Batch export"
+                              : "Exporting clip"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {renderState.label || "Working…"}
+                          {renderState.progress != null
+                            ? ` · ${Math.round(renderState.progress * 100)}%`
+                            : ""}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          First run may sit at 0% while the video engine loads. Multi-moment reels
+                          often take 2–10 minutes — the page should stay responsive.
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          renderAbortRef.current?.abort();
+                          toast.message("Cancelling export…");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full bg-primary transition-all duration-300"
+                        style={{
+                          width:
+                            renderState.progress != null
+                              ? `${Math.max(2, Math.round(renderState.progress * 100))}%`
+                              : "15%",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+<div className="mb-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!file || !project.clips.length || !!renderingClipId}
+                    onClick={() => void exportHighlightReel()}
+                  >
+                    {renderingClipId === "highlight-reel"
+                      ? (renderState.label || "Exporting highlight reel…")
+                      : "Export full-video highlight reel"}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Stitches top moments into one clip
+                  </span>
+                </div>
                 <BestMomentsPanel
                   recommendations={bestMoments}
                   maxShow={bestMomentsMax}
