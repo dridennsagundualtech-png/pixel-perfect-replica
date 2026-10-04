@@ -9,7 +9,7 @@ import type { DetectionRule } from "../src/lib/detection/types";
 import { NOW, PLAIN, RICH, seg, sentences } from "./helpers";
 
 const rules = createDefaultRules();
-const run = (segments: ReturnType<typeof sentences>, r: DetectionRule[] = rules, mode: "rules" | "ai" | "hybrid" = "rules") =>
+const run = async (segments: ReturnType<typeof sentences>, r: DetectionRule[] = rules, mode: "rules" | "ai" | "hybrid" = "rules") =>
   runDetection({ segments }, r, { mode, now: NOW, ai: createDefaultAiSettings() });
 const setRule = (type: string, patch: Partial<DetectionRule>) =>
   rules.map((r) => (r.type === type ? { ...r, ...patch } : r));
@@ -64,11 +64,11 @@ describe("rule engine", () => {
     expect(m.fillerWordCount).toBeGreaterThanOrEqual(2);
   });
   it("keeps plain clips (quality signals never reject)", async () => {
-    expect(await run(sentences(PLAIN)).candidates.length).toBeGreaterThan(0);
+    expect((await run(sentences(PLAIN))).candidates.length).toBeGreaterThan(0);
   });
   it("scores clips with signals higher", async () => {
-    const plain = await run(sentences(PLAIN)).candidates[0]!;
-    const rich = await run(sentences(RICH)).candidates[0]!;
+    const plain = (await run(sentences(PLAIN))).candidates[0]!;
+    const rich = (await run(sentences(RICH))).candidates[0]!;
     expect(rich.score!).toBeGreaterThan(plain.score!);
     expect(rich.score!).toBeLessThanOrEqual(100);
   });
@@ -78,16 +78,16 @@ describe("rule engine", () => {
     expect(res.candidates.some((c) => c.startSec <= 12 && c.endSec >= 23)).toBe(false);
   });
   it("rejects clips under min / over max duration", async () => {
-    expect(await run(sentences(PLAIN.slice(0, 2))).candidates).toHaveLength(0);
+    expect((await run(sentences(PLAIN.slice(0, 2)))).candidates).toHaveLength(0);
     const tight = setRule("length.max", { value: 25 });
-    for (const c of await run(sentences([...PLAIN, ...RICH]), tight).candidates) expect(c.endSec - c.startSec).toBeLessThanOrEqual(25);
+    for (const c of (await run(sentences([...PLAIN, ...RICH]), tight)).candidates) expect(c.endSec - c.startSec).toBeLessThanOrEqual(25);
   });
   it("rejects high filler density", async () => {
     const fill = sentences(Array.from({ length: 5 }, () => "Um uh basically you know literally um it is."));
-    expect(await run(fill).candidates).toHaveLength(0);
+    expect((await run(fill)).candidates).toHaveLength(0);
   });
   it("removes overlapping duplicates", async () => {
-    const cands = await run(sentences([...PLAIN, ...RICH, ...PLAIN])).candidates;
+    const cands = (await run(sentences([...PLAIN, ...RICH, ...PLAIN]))).candidates;
     for (let i = 0; i < cands.length; i++)
       for (let j = i + 1; j < cands.length; j++) {
         const a = cands[i]!, b = cands[j]!;
@@ -96,7 +96,7 @@ describe("rule engine", () => {
       }
   });
   it("is deterministic", async () => {
-    expect(JSON.stringify(await run(sentences(RICH)).candidates)).toBe(JSON.stringify(await run(sentences(RICH)).candidates));
+    expect(JSON.stringify((await run(sentences(RICH)).candidates)).toBe(JSON.stringify(await run(sentences(RICH))).candidates));
   });
   it("handles empty / malformed transcripts", async () => {
     expect((await runDetection(undefined, rules, { now: NOW })).status).toBe("no-transcript");
@@ -105,7 +105,7 @@ describe("rule engine", () => {
     expect(v.segments.map((s) => s.id)).toEqual(["ok"]);
   });
   it("reports invalid rules", async () => {
-    expect(await run(sentences(PLAIN), setRule("length.min", { value: 90 })).status).toBe("invalid-rules");
+    expect((await run(sentences(PLAIN), setRule("length.min", { value: 90 }))).status).toBe("invalid-rules");
   });
 });
 
@@ -119,7 +119,7 @@ describe("engagement signals", () => {
   });
   it("AI/hybrid modes add Engagement Potential within 0–100", async () => {
     for (const mode of ["ai", "hybrid"] as const) {
-      const c = await run(sentences([...RICH, ...PLAIN]), rules, mode).candidates;
+      const c = (await run(sentences([...RICH, ...PLAIN]), rules, mode)).candidates;
       expect(c.length).toBeGreaterThan(0);
       for (const x of c) {
         expect(x.engagementPotential).toBeGreaterThanOrEqual(0);
