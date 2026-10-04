@@ -51,6 +51,19 @@ import {
   type TimelineRemovalBand,
 } from "@/components/clips/ClipTimeline";
 import type { CleanupSettings } from "@/lib/video/cleanup-settings";
+import {
+  DEFAULT_OUTPUT_SETTINGS,
+  EXPORT_PRESETS,
+  FORMAT_META,
+  REFRAME_LABELS,
+  manualReframeX,
+  type AspectFormat,
+  type OutputSettings,
+  type ReframeChoice,
+} from "@/lib/video/output-format";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import type { MetadataKind } from "@/lib/clip-metadata";
 
 /**
  * Clip inspector + trimmer: 9:16 preview with live captions, trim, caption /
@@ -58,7 +71,11 @@ import type { CleanupSettings } from "@/lib/video/cleanup-settings";
  */
 
 type Snapshot = { title: string; startSec: number; endSec: number };
-type ReframeMode = "smart" | "center";
+const PREVIEW_WIDTH: Record<AspectFormat, string> = {
+  vertical: "max-w-[260px]",
+  square: "max-w-[340px]",
+  landscape: "max-w-[520px]",
+};
 
 const POSITION_CLASS: Record<CaptionPosition, string> = {
   top: "top-[14%]",
@@ -91,7 +108,15 @@ export function ClipEditDialog({
   onFlipChange,
   music = null,
   onMusicChange,
+  outputSettings,
+  onOutputSettingsChange,
+  onThumbnail,
+  onRegenerateThumbnail,
 }: {
+  outputSettings?: OutputSettings | undefined;
+  onOutputSettingsChange?: ((patch: Partial<OutputSettings>) => void) | undefined;
+  onThumbnail?: ((dataUrl: string) => void) | undefined;
+  onRegenerateThumbnail?: ((startSec: number, endSec: number) => void) | undefined;
   flip?: boolean | undefined;
   onFlipChange?: ((v: boolean) => void) | undefined;
   music?: BackgroundMusic | null | undefined;
@@ -109,7 +134,7 @@ export function ClipEditDialog({
   cleanupSettings?: CleanupSettings | undefined;
   onCleanupSettingsChange?: ((patch: Partial<CleanupSettings>) => void) | undefined;
   onClose: () => void;
-  onSave: (changes: Snapshot) => void;
+  onSave: (changes: Snapshot & { description?: string; hashtags?: string }) => void;
   onExport?: (clip: ClipCandidate) => void;
   onRequestVideo?: () => void;
 }) {
@@ -137,7 +162,12 @@ export function ClipEditDialog({
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [current, setCurrent] = useState(0);
-  const [reframeMode, setReframeMode] = useState<ReframeMode>("smart");
+  const out = outputSettings ?? DEFAULT_OUTPUT_SETTINGS;
+  const manualX = manualReframeX(out);
+  const [description, setDescription] = useState("");
+  const [hashtags, setHashtags] = useState("");
+  const [genBusy, setGenBusy] = useState<MetadataKind | null>(null);
+  const [thumbText, setThumbText] = useState("");
   const [faceX, setFaceX] = useState<number | null>(null);
   const [reframeLoading, setReframeLoading] = useState(false);
   const [undoStack, setUndoStack] = useState<Snapshot[]>([]);
@@ -157,6 +187,9 @@ export function ClipEditDialog({
     const s = Math.round(clip.startSec * 10) / 10;
     const e = Math.round(clip.endSec * 10) / 10;
     setTitle(clip.title);
+    setDescription(clip.description ?? "");
+    setHashtags(clip.hashtags ?? "");
+    setThumbText("");
     setStart(s);
     setEnd(e);
     setCurrent(s);
@@ -379,8 +412,64 @@ export function ClipEditDialog({
   const viewStart = Math.max(0, start - pad);
   const viewEnd = Math.min(total, end + pad);
 
-  const usingSmart = reframeMode === "smart" && faceX !== null;
-  const objectPosition = `${Math.round((usingSmart ? faceX! : 0.5) * 100)}% 50%`;
+  const usingSmart = out.reframe === "auto" && faceX !== null;
+  const objectPosition = `${Math.round((manualX ?? (usingSmart ? faceX! : 0.5)) * 100)}% 50%`;
+
+  const clipText = () =>
+    (segments ?? [])
+      .filter((sg) => sg.endSec > start && sg.startSec < end)
+      .map((sg) => sg.text.trim())
+      .join(" ");
+
+  const generate = async (kind: MetadataKind) => {
+    setGenBusy(kind);
+    try {
+      const [{ generateClipMetadata }, ollama] = await Promise.all([
+        import("@/lib/clip-metadata"),
+        import("@/lib/detection/ollama-ranking-provider"),
+      ]);
+      const r = await generateClipMetadata(kind, clipText() || clip?.transcriptText || "", {
+        ollama: ollama.loadOllamaSettings(),
+        generate: (b, m, p) => ollama.ollamaGenerate(b, m, p, 60_000),
+      });
+      if (!r.value) throw new Error("empty");
+      if (kind === "title") setTitle(r.value);
+      else if (kind === "description") setDescription(r.value);
+      else setHashtags(r.value);
+      if (r.warning) toast.message(r.warning);
+    } catch (e) {
+      toast.error(
+        e instanceof Error && e.message.includes("transcript")
+          ? e.message
+          : "AI suggestions are unavailable right now. You can enter it manually.",
+      );
+    } finally {
+      setGenBusy(null);
+    }
+  };
+
+  /** Capture the current preview frame (with framing + optional text) as the thumbnail. */
+  const captureThumbnail = async () => {
+    const el = videoRef.current;
+    if (!el || !el.videoWidth) {
+      toast.error("Thumbnail generation failed. Load the video and choose a frame first.");
+      return;
+    }
+    try {
+      const { drawThumbnailFrame } = await import("@/lib/video/thumbnail-frame");
+      const url = drawThumbnailFrame(el, {
+        format: out.format,
+        x: manualX ?? (usingSmart ? faceX! : 0.5),
+        flip,
+        text: thumbText,
+      });
+      if (!url) throw new Error("no canvas");
+      onThumbnail?.(url);
+      toast.success("Thumbnail set from this frame");
+    } catch {
+      toast.error("Thumbnail generation failed. You can choose a frame manually.");
+    }
+  };
   const highlightOn = caps.highlightWord && cue?.activeWordIndex != null && cue.words.length > 0;
 
   return (
@@ -389,14 +478,16 @@ export function ClipEditDialog({
         <DialogHeader>
           <DialogTitle>Clip editor</DialogTitle>
           <DialogDescription>
-            Preview the 9:16 short with captions, trim, then save or export.
+            Trim, customize captions, format and framing, add a title, then export.
           </DialogDescription>
         </DialogHeader>
 
         {!clip ? null : (
           <div className="space-y-4">
-            <div className="mx-auto w-full max-w-[260px]">
-              <div className="relative aspect-[9/16] overflow-hidden rounded-xl border border-border bg-background">
+            <div className={`mx-auto w-full ${PREVIEW_WIDTH[out.format]}`}>
+              <div
+                style={{ aspectRatio: FORMAT_META[out.format].css }}
+                className="relative overflow-hidden rounded-xl border border-border bg-background">
                 {videoUrl ? (
                   <video
                     ref={videoRef}
@@ -453,13 +544,15 @@ export function ClipEditDialog({
 
                 <div className="absolute left-2 top-2 flex flex-wrap gap-1">
                   <Badge variant="secondary" className="text-[10px]">
-                    9:16
+                    {FORMAT_META[out.format].ratio}
                   </Badge>
                   <Badge variant="outline" className="bg-background/60 text-[10px]">
                     {reframeLoading ? (
                       <span className="flex items-center gap-1">
                         <Loader2 className="size-3 animate-spin" /> Finding face…
                       </span>
+                    ) : manualX !== null ? (
+                      `Manual · ${REFRAME_LABELS[out.reframe]}`
                     ) : usingSmart ? (
                       "Smart Reframe"
                     ) : (
@@ -504,8 +597,23 @@ export function ClipEditDialog({
             />
 
             <div className="space-y-2">
-              <Label htmlFor="clip-title">Title</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="clip-title">Title</Label>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={genBusy !== null}
+                  onClick={() => void generate("title")}
+                >
+                  {genBusy === "title" ? <Loader2 className="size-3 animate-spin" /> : null}
+                  Generate Title
+                </Button>
+              </div>
               <Input id="clip-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">
+                Suggested title — edit it freely. Uses Ollama if turned on, otherwise a local
+                suggestion from the transcript.
+              </p>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-2">
@@ -609,18 +717,72 @@ export function ClipEditDialog({
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-border p-3">
-                <p className="mb-2 text-sm font-medium">Crop / reframe</p>
-                <Select value={reframeMode} onValueChange={(v) => setReframeMode(v as ReframeMode)}>
+                <p className="mb-2 text-sm font-medium">Format & reframe</p>
+                <div className="mb-2 grid grid-cols-3 gap-1.5">
+                  {(Object.keys(FORMAT_META) as AspectFormat[]).map((f) => (
+                    <Button
+                      key={f}
+                      size="sm"
+                      variant={out.format === f ? "default" : "outline"}
+                      disabled={!onOutputSettingsChange}
+                      onClick={() => onOutputSettingsChange?.({ format: f })}
+                    >
+                      {FORMAT_META[f].ratio}
+                    </Button>
+                  ))}
+                </div>
+                <Select
+                  value={
+                    EXPORT_PRESETS.find(
+                      (p) => p.format === out.format && p.resolution === out.resolution,
+                    )?.id
+                  }
+                  onValueChange={(id) => {
+                    const p = EXPORT_PRESETS.find((x) => x.id === id);
+                    if (p) onOutputSettingsChange?.({ format: p.format, resolution: p.resolution });
+                  }}
+                >
+                  <SelectTrigger className="mb-2">
+                    <SelectValue placeholder="Export preset" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EXPORT_PRESETS.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={out.reframe}
+                  onValueChange={(v) => onOutputSettingsChange?.({ reframe: v as ReframeChoice })}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="smart">Smart Reframe (face)</SelectItem>
-                    <SelectItem value="center">Center crop</SelectItem>
+                    {(Object.keys(REFRAME_LABELS) as ReframeChoice[]).map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {REFRAME_LABELS[r]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                {out.reframe === "custom" ? (
+                  <input
+                    type="range"
+                    aria-label="Horizontal position"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={out.manualX}
+                    onChange={(e) => onOutputSettingsChange?.({ manualX: Number(e.target.value) })}
+                    className="mt-2 w-full accent-primary"
+                  />
+                ) : null}
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Preview only for now — export still prefers smart reframe with center fallback.
+                  Auto follows the face (center if none is found). Manual choices only change the
+                  final framing; preview and export match.
                 </p>
               </div>
               <div className="space-y-3 rounded-lg border border-border p-3">
@@ -721,6 +883,110 @@ export function ClipEditDialog({
               </div>
             </div>
 
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-2 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="clip-desc" className="text-sm">
+                    Description
+                  </Label>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={genBusy !== null}
+                    onClick={() => void generate("description")}
+                  >
+                    {genBusy === "description" ? <Loader2 className="size-3 animate-spin" /> : null}
+                    Generate Description
+                  </Button>
+                </div>
+                <Textarea
+                  id="clip-desc"
+                  rows={3}
+                  maxLength={400}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="clip-tags" className="text-sm">
+                    Suggested hashtags
+                  </Label>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={genBusy !== null}
+                      onClick={() => void generate("hashtags")}
+                    >
+                      {genBusy === "hashtags" ? <Loader2 className="size-3 animate-spin" /> : null}
+                      Suggest
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={!hashtags.trim()}
+                      onClick={() =>
+                        void navigator.clipboard
+                          .writeText(hashtags.trim())
+                          .then(() => toast.success("Hashtags copied"))
+                          .catch(() => toast.error("Couldn't copy — select and copy them manually."))
+                      }
+                    >
+                      Copy hashtags
+                    </Button>
+                  </div>
+                </div>
+                <Input
+                  id="clip-tags"
+                  value={hashtags}
+                  placeholder="#topic #another"
+                  onChange={(e) => setHashtags(e.target.value)}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Suggestions only — hashtags don't guarantee reach.
+                </p>
+              </div>
+              <div className="space-y-2 rounded-lg border border-border p-3">
+                <p className="text-sm font-medium">Thumbnail</p>
+                {clip.thumbnailUrl ? (
+                  <img
+                    src={clip.thumbnailUrl}
+                    alt="Clip thumbnail"
+                    className="mx-auto max-h-40 rounded border border-border object-contain"
+                  />
+                ) : (
+                  <p className="text-xs text-muted-foreground">No thumbnail yet.</p>
+                )}
+                <Input
+                  placeholder="Thumbnail text (optional)"
+                  maxLength={60}
+                  value={thumbText}
+                  onChange={(e) => setThumbText(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!videoUrl || !onThumbnail}
+                    onClick={() => void captureThumbnail()}
+                  >
+                    Use current frame
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!hasVideoFile || !onRegenerateThumbnail}
+                    onClick={() => onRegenerateThumbnail?.(start, end)}
+                  >
+                    Regenerate automatically
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Pause the preview on the frame you want, add text if you like, then click Use
+                  current frame.
+                </p>
+              </div>
+            </div>
+
             <ClipTimeline
               durationSec={total}
               viewStartSec={viewStart}
@@ -758,7 +1024,11 @@ export function ClipEditDialog({
                   <Info label="Engagement" value={String(clip.engagementPotential)} />
                 ) : null}
                 <Info label="Captions" value={caps.enabled ? "On" : "Off"} />
-                <Info label="Reframe" value={usingSmart ? "Smart" : "Center"} />
+                <Info label="Format" value={FORMAT_META[out.format].ratio} />
+                <Info
+                  label="Reframe"
+                  value={manualX !== null ? "Manual" : usingSmart ? "Auto (face)" : "Center"}
+                />
                 <Info label="Flip" value={flip ? "On" : "Off"} />
                 <Info label="Music" value={music ? "On" : "Off"} />
                 <Info
@@ -796,7 +1066,7 @@ export function ClipEditDialog({
                 disabled={error !== null}
                 onClick={() => {
                   const t = title.trim() || clip.title;
-                  onSave({ title: t, startSec: start, endSec: end });
+                  onSave({ title: t, startSec: start, endSec: end, description, hashtags });
                   onExport({ ...clip, title: t, startSec: start, endSec: end });
                 }}
               >
@@ -805,7 +1075,9 @@ export function ClipEditDialog({
             ) : null}
             <Button
               disabled={error !== null || !title.trim()}
-              onClick={() => onSave({ title: title.trim(), startSec: start, endSec: end })}
+              onClick={() =>
+                onSave({ title: title.trim(), startSec: start, endSec: end, description, hashtags })
+              }
             >
               Save
             </Button>
