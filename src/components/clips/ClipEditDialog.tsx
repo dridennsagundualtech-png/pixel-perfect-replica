@@ -1,13 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Loader2,
-  Maximize2,
-  Pause,
-  Play,
-  RotateCcw,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Maximize2, Pause, Play, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,34 +12,65 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { TranscriptSegment } from "@/lib/detection/transcript";
 import {
   buildCaptionCues,
-  captionTextAtTime,
+  CAPTION_PRESETS,
+  cueAtTime,
   DEFAULT_CAPTION_SETTINGS,
+  type CaptionPosition,
   type CaptionSettings,
+  type CaptionSize,
+  type CaptionStyleId,
 } from "@/lib/video/dynamic-captions";
 import type { ClipCandidate } from "@/lib/detection/types";
 import { formatTimecode } from "@/lib/format";
-import { MODE_META } from "@/lib/detection/defaults";
-import { ClipTimeline, type TimelineCaptionBand, type TimelineRemovalBand } from "@/components/clips/ClipTimeline";
+import {
+  ClipTimeline,
+  type TimelineCaptionBand,
+  type TimelineRemovalBand,
+} from "@/components/clips/ClipTimeline";
 import type { CleanupSettings } from "@/lib/video/cleanup-settings";
 
 /**
- * Lightweight clip inspector + trimmer (Phase 5).
- * Not a full NLE — preview, trim, reset, save. Export uses the existing pipeline.
+ * Clip inspector + trimmer: 9:16 preview with live captions, trim, caption /
+ * reframe / cleanup controls that share the export settings. Not a full NLE.
  */
+
+type Snapshot = { title: string; startSec: number; endSec: number };
+type ReframeMode = "smart" | "center";
+
+const POSITION_CLASS: Record<CaptionPosition, string> = {
+  top: "top-[14%]",
+  center: "top-1/2 -translate-y-1/2",
+  lower: "bottom-[24%]",
+  bottom: "bottom-[14%]",
+};
+const SIZE_CLASS: Record<CaptionSize, string> = {
+  small: "text-sm",
+  medium: "text-base",
+  large: "text-xl",
+};
 
 export function ClipEditDialog({
   clip,
   maxSec,
   videoUrl,
+  videoFile,
   hasVideoFile,
   segments,
-  captionsEnabled,
   captionSettings,
+  onCaptionSettingsChange,
   cleanupSettings,
+  onCleanupSettingsChange,
   onClose,
   onSave,
   onExport,
@@ -55,131 +78,124 @@ export function ClipEditDialog({
 }: {
   clip: ClipCandidate | null;
   maxSec?: number | undefined;
-  /** Object URL for the local project video, if selected this session. */
   videoUrl?: string | null | undefined;
+  videoFile?: File | null | undefined;
   hasVideoFile?: boolean | undefined;
   segments?: TranscriptSegment[] | undefined;
+  /** @deprecated use captionSettings.enabled */
   captionsEnabled?: boolean | undefined;
   captionSettings?: CaptionSettings | undefined;
+  onCaptionSettingsChange?: ((patch: Partial<CaptionSettings>) => void) | undefined;
   cleanupSettings?: CleanupSettings | undefined;
+  onCleanupSettingsChange?: ((patch: Partial<CleanupSettings>) => void) | undefined;
   onClose: () => void;
-  onSave: (changes: { title: string; startSec: number; endSec: number }) => void;
+  onSave: (changes: Snapshot) => void;
   onExport?: (clip: ClipCandidate) => void;
   onRequestVideo?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const barRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<"start" | "end" | "playhead" | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const caps = captionSettings ?? DEFAULT_CAPTION_SETTINGS;
 
   const [title, setTitle] = useState("");
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(0);
-  /** Original detected bounds for "Reset to detected clip". */
-  const detectedRef = useRef<{ title: string; startSec: number; endSec: number } | null>(
-    null,
-  );
+  const detectedRef = useRef<Snapshot | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [current, setCurrent] = useState(0);
-  const [reframeX, setReframeX] = useState(0.5);
-  const [reframeLabel, setReframeLabel] = useState<"Smart Reframe" | "Center Crop">(
-    "Center Crop",
-  );
+  const [reframeMode, setReframeMode] = useState<ReframeMode>("smart");
+  const [faceX, setFaceX] = useState<number | null>(null);
   const [reframeLoading, setReframeLoading] = useState(false);
-  const [undoStack, setUndoStack] = useState<
-    { title: string; startSec: number; endSec: number }[]
-  >([]);
-  const [redoStack, setRedoStack] = useState<
-    { title: string; startSec: number; endSec: number }[]
-  >([]);
+  const [undoStack, setUndoStack] = useState<Snapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<Snapshot[]>([]);
   const [removals, setRemovals] = useState<TimelineRemovalBand[]>([]);
-  const [captionBands, setCaptionBands] = useState<TimelineCaptionBand[]>([]);
 
-  // Seed form + detected snapshot when a new clip opens.
+  // Latest bounds for the animation loop (avoids re-subscribing on every trim).
+  const boundsRef = useRef({ start: 0, end: 0 });
+  boundsRef.current = { start, end };
+
   useEffect(() => {
     if (!clip) {
       detectedRef.current = null;
       setPlaying(false);
       return;
     }
-    setTitle(clip.title);
     const s = Math.round(clip.startSec * 10) / 10;
     const e = Math.round(clip.endSec * 10) / 10;
+    setTitle(clip.title);
     setStart(s);
     setEnd(e);
-    detectedRef.current = { title: clip.title, startSec: s, endSec: e };
     setCurrent(s);
-    setReframeX(0.5);
-    setReframeLabel("Center Crop");
+    detectedRef.current = { title: clip.title, startSec: s, endSec: e };
     setUndoStack([]);
     setRedoStack([]);
+    setFaceX(null);
   }, [clip?.id]);
 
-  // Keep playback inside [start, end].
-  useEffect(() => {
+  // Smooth playhead: requestAnimationFrame while playing (timeupdate fires only ~4x/s).
+  const tick = () => {
     const el = videoRef.current;
-    if (!el || !clip) return;
-    const onTime = () => {
-      const t = el.currentTime;
-      setCurrent(t);
-      if (t >= end - 0.05) {
-        el.pause();
-        el.currentTime = end;
-        setPlaying(false);
-      }
-      if (t < start - 0.05) el.currentTime = start;
-    };
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    el.addEventListener("timeupdate", onTime);
-    el.addEventListener("play", onPlay);
-    el.addEventListener("pause", onPause);
-    return () => {
-      el.removeEventListener("timeupdate", onTime);
-      el.removeEventListener("play", onPlay);
-      el.removeEventListener("pause", onPause);
-    };
-  }, [clip, start, end]);
-
-  // Seek to start when range or video URL changes.
+    if (!el) return;
+    const { start: s, end: e } = boundsRef.current;
+    const t = el.currentTime;
+    if (t >= e - 0.03) {
+      el.pause();
+      el.currentTime = e;
+      setCurrent(e);
+      return;
+    }
+    if (t < s - 0.05) el.currentTime = s;
+    setCurrent(t);
+    rafRef.current = requestAnimationFrame(tick);
+  };
+  const stopLoop = () => {
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+  };
+  useEffect(() => stopLoop, []);
   useEffect(() => {
+    if (!clip) stopLoop();
+  }, [clip]);
+
+  const onVideoPlay = () => {
+    setPlaying(true);
+    stopLoop();
+    rafRef.current = requestAnimationFrame(tick);
+  };
+  const onVideoPause = () => {
+    setPlaying(false);
+    stopLoop();
     const el = videoRef.current;
-    if (!el || !videoUrl) return;
-    el.currentTime = start;
-    setCurrent(start);
-  }, [videoUrl, start, clip?.id]);
+    if (el) setCurrent(el.currentTime);
+  };
+  const onLoaded = () => {
+    const el = videoRef.current;
+    if (el) el.currentTime = boundsRef.current.start;
+  };
 
-  // Lightweight smart-reframe sample for preview object-position (non-blocking).
+  // Face sample once per opened clip (uses the in-memory File; never re-reads on trim).
   useEffect(() => {
-    if (!clip || !videoUrl || typeof window === "undefined") return;
+    if (!clip || !videoFile) return;
     let cancelled = false;
     setReframeLoading(true);
+    const s0 = clip.startSec;
+    const e0 = clip.endSec;
     (async () => {
       try {
-        const res = await fetch(videoUrl);
-        const blob = await res.blob();
-        const file = new File([blob], "preview.mp4", { type: blob.type || "video/mp4" });
         const { trackSubject } = await import("@/lib/video/subject-tracker");
-        const track = await trackSubject(file, {
-          startSec: start,
-          endSec: end,
-          sampleIntervalSec: Math.max(0.6, (end - start) / 8),
+        const track = await trackSubject(videoFile, {
+          startSec: s0,
+          endSec: e0,
+          sampleIntervalSec: Math.max(0.8, (e0 - s0) / 8),
         });
         if (cancelled) return;
         if (track.source === "face" && track.points.length) {
-          const mid = track.points[Math.floor(track.points.length / 2)]!;
-          setReframeX(mid.x);
-          setReframeLabel("Smart Reframe");
-        } else {
-          setReframeX(0.5);
-          setReframeLabel("Center Crop");
-        }
+          setFaceX(track.points[Math.floor(track.points.length / 2)]!.x);
+        } else setFaceX(null);
       } catch {
-        if (!cancelled) {
-          setReframeX(0.5);
-          setReframeLabel("Center Crop");
-        }
+        if (!cancelled) setFaceX(null);
       } finally {
         if (!cancelled) setReframeLoading(false);
       }
@@ -187,7 +203,7 @@ export function ClipEditDialog({
     return () => {
       cancelled = true;
     };
-  }, [clip?.id, videoUrl, start, end]);
+  }, [clip?.id, videoFile]);
 
   const limit = maxSec ?? Number.POSITIVE_INFINITY;
   const duration = Math.max(0, end - start);
@@ -200,23 +216,77 @@ export function ClipEditDialog({
           ? `End can't be past the end of the video (${Math.floor(limit)}s).`
           : null;
 
-  const captionLine = liveCaption(
-    segments ?? [],
-    current,
-    start,
-    end,
-    captionSettings,
+  // Caption cues: same builder as Export Short.
+  const cues = useMemo(
+    () => (caps.enabled ? buildCaptionCues(segments ?? [], start, end, caps) : []),
+    [segments, start, end, caps],
   );
+  const cue = cueAtTime(cues, current - start);
+  const preset = CAPTION_PRESETS[caps.style] ?? CAPTION_PRESETS.highlight;
+
+  const captionBands = useMemo<TimelineCaptionBand[]>(
+    () =>
+      cues
+        .filter((c, i, arr) => i === 0 || arr[i - 1]!.group !== c.group)
+        .map((c) => {
+          const last = [...cues].reverse().find((x) => x.group === c.group) ?? c;
+          return { startSec: start + c.startSec, endSec: start + last.endSec, label: c.text };
+        }),
+    [cues, start],
+  );
+
+  // Removal preview (debounced so dragging stays fluid).
+  useEffect(() => {
+    if (!clip) return;
+    if (!cleanupSettings?.removeDeadAir && !cleanupSettings?.removeFillers) {
+      setRemovals([]);
+      return;
+    }
+    let cancelled = false;
+    const id = window.setTimeout(async () => {
+      try {
+        const { buildCleanupPlan } = await import("@/lib/video/cleanup-plan");
+        const { plan } = await buildCleanupPlan({
+          segments: segments ?? [],
+          clipStart: start,
+          clipEnd: end,
+          settings: cleanupSettings,
+        });
+        if (cancelled) return;
+        if (plan.isIdentity) return setRemovals([]);
+        const out: TimelineRemovalBand[] = [];
+        let cursor = start;
+        for (const s of plan.segments) {
+          if (s.sourceStartSec > cursor + 0.05)
+            out.push({ startSec: cursor, endSec: s.sourceStartSec, reason: "silence" });
+          cursor = s.sourceEndSec;
+        }
+        if (end > cursor + 0.05) out.push({ startSec: cursor, endSec: end, reason: "silence" });
+        setRemovals(out);
+      } catch {
+        if (!cancelled) setRemovals([]);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [clip?.id, start, end, segments, cleanupSettings]);
+
+  const seek = (t: number) => {
+    const clamped = Math.min(end, Math.max(start, t));
+    const el = videoRef.current;
+    if (el) el.currentTime = clamped;
+    setCurrent(clamped);
+  };
 
   const togglePlay = () => {
     const el = videoRef.current;
     if (!el) return;
     if (el.paused) {
-      if (el.currentTime < start || el.currentTime >= end) el.currentTime = start;
+      if (el.currentTime < start || el.currentTime >= end - 0.05) el.currentTime = start;
       void el.play().catch(() => undefined);
-    } else {
-      el.pause();
-    }
+    } else el.pause();
   };
 
   const restart = () => {
@@ -227,171 +297,51 @@ export function ClipEditDialog({
     void el.play().catch(() => undefined);
   };
 
-  const resetDetected = () => {
-    const d = detectedRef.current;
-    if (!d) return;
-    setTitle(d.title);
-    setStart(d.startSec);
-    setEnd(d.endSec);
-    const el = videoRef.current;
-    if (el) {
-      el.currentTime = d.startSec;
-      setCurrent(d.startSec);
-    }
-  };
-
-  const clampStart = (v: number) => {
-    const next = Math.max(0, Math.min(v, end - 0.1));
-    setStart(Math.round(next * 10) / 10);
-  };
-  const clampEnd = (v: number) => {
-    const next = Math.min(limit, Math.max(v, start + 0.1));
-    setEnd(Math.round(next * 10) / 10);
-  };
-
   const pushHistory = () => {
     setUndoStack((u) => [...u.slice(-29), { title, startSec: start, endSec: end }]);
     setRedoStack([]);
   };
-
+  const apply = (s: Snapshot) => {
+    setTitle(s.title);
+    setStart(s.startSec);
+    setEnd(s.endSec);
+  };
   const undo = () => {
-    setUndoStack((u) => {
-      if (!u.length) return u;
-      const prev = u[u.length - 1]!;
-      setRedoStack((r) => [...r, { title, startSec: start, endSec: end }]);
-      setTitle(prev.title);
-      setStart(prev.startSec);
-      setEnd(prev.endSec);
-      return u.slice(0, -1);
-    });
+    const prev = undoStack[undoStack.length - 1];
+    if (!prev) return;
+    setRedoStack((r) => [...r, { title, startSec: start, endSec: end }]);
+    setUndoStack((u) => u.slice(0, -1));
+    apply(prev);
   };
-
   const redo = () => {
-    setRedoStack((r) => {
-      if (!r.length) return r;
-      const next = r[r.length - 1]!;
-      setUndoStack((u) => [...u, { title, startSec: start, endSec: end }]);
-      setTitle(next.title);
-      setStart(next.startSec);
-      setEnd(next.endSec);
-      return r.slice(0, -1);
-    });
+    const next = redoStack[redoStack.length - 1];
+    if (!next) return;
+    setUndoStack((u) => [...u, { title, startSec: start, endSec: end }]);
+    setRedoStack((r) => r.slice(0, -1));
+    apply(next);
+  };
+  const resetDetected = () => {
+    const d = detectedRef.current;
+    if (!d) return;
+    pushHistory();
+    apply(d);
+    seek(d.startSec);
   };
 
-  const onBarPointer = useCallback(
-    (clientX: number, mode: "start" | "end" | "playhead") => {
-      const bar = barRef.current;
-      if (!bar || !Number.isFinite(limit) || limit <= 0) return;
-      const rect = bar.getBoundingClientRect();
-      const u = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-      const t = u * limit;
-      if (mode === "start") clampStart(t);
-      else if (mode === "end") clampEnd(t);
-      else {
-        const clamped = Math.min(end, Math.max(start, t));
-        const el = videoRef.current;
-        if (el) el.currentTime = clamped;
-        setCurrent(clamped);
-      }
-    },
-    [limit, start, end],
-  );
+  const setStartClamped = (v: number) =>
+    setStart(Math.round(Math.max(0, Math.min(v, end - 0.1)) * 10) / 10);
+  const setEndClamped = (v: number) =>
+    setEnd(Math.round(Math.min(limit, Math.max(v, start + 0.1)) * 10) / 10);
 
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      if (!dragRef.current) return;
-      onBarPointer(e.clientX, dragRef.current);
-    };
-    const onUp = () => {
-      dragRef.current = null;
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-  }, [onBarPointer]);
+  // Zoomed timeline window around the clip so movement is visible.
+  const total = Number.isFinite(limit) ? limit : Math.max(end + 30, 1);
+  const pad = Math.max(10, duration * 0.5);
+  const viewStart = Math.max(0, start - pad);
+  const viewEnd = Math.min(total, end + pad);
 
-  const progressPct =
-    duration > 0 ? Math.min(100, Math.max(0, ((current - start) / duration) * 100)) : 0;
-  const startPct = limit > 0 ? (start / limit) * 100 : 0;
-  const endPct = limit > 0 ? (end / limit) * 100 : 100;
-
-  // object-position: map subject X so the face stays in frame under object-cover
-  const objectPosition = `${Math.round(reframeX * 100)}% 50%`;
-
-
-  // Caption bands + non-destructive removal preview for timeline
-  useEffect(() => {
-    if (!clip) {
-      setCaptionBands([]);
-      setRemovals([]);
-      return;
-    }
-    const segs = segments ?? [];
-    const bands: TimelineCaptionBand[] = [];
-    for (const seg of segs) {
-      if (!(seg.endSec > start && seg.startSec < end)) continue;
-      const words = Array.isArray(seg.words) ? seg.words : [];
-      if (words.length) {
-        for (const w of words) {
-          if (w.endSec > start && w.startSec < end)
-            bands.push({ startSec: w.startSec, endSec: w.endSec, label: w.text });
-        }
-      } else if (seg.text.trim()) {
-        bands.push({
-          startSec: Math.max(start, seg.startSec),
-          endSec: Math.min(end, seg.endSec),
-          label: seg.text.trim().slice(0, 40),
-        });
-      }
-    }
-    setCaptionBands(bands);
-
-    let cancelled = false;
-    (async () => {
-      if (!cleanupSettings?.removeDeadAir && !cleanupSettings?.removeFillers) {
-        if (!cancelled) setRemovals([]);
-        return;
-      }
-      try {
-        const { buildCleanupPlan } = await import("@/lib/video/cleanup-plan");
-        const { plan } = await buildCleanupPlan({
-          segments: segs,
-          clipStart: start,
-          clipEnd: end,
-          settings: cleanupSettings,
-        });
-        if (cancelled || plan.isIdentity) {
-          if (!cancelled) setRemovals([]);
-          return;
-        }
-        // Invert keep segments → removal bands for display
-        const removes: TimelineRemovalBand[] = [];
-        let cursor = start;
-        for (const s of plan.segments) {
-          if (s.sourceStartSec > cursor + 0.05) {
-            removes.push({
-              startSec: cursor,
-              endSec: s.sourceStartSec,
-              reason: "silence",
-            });
-          }
-          cursor = s.sourceEndSec;
-        }
-        if (end > cursor + 0.05) {
-          removes.push({ startSec: cursor, endSec: end, reason: "silence" });
-        }
-        if (!cancelled) setRemovals(removes);
-      } catch {
-        if (!cancelled) setRemovals([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [clip?.id, start, end, segments, cleanupSettings]);
+  const usingSmart = reframeMode === "smart" && faceX !== null;
+  const objectPosition = `${Math.round((usingSmart ? faceX! : 0.5) * 100)}% 50%`;
+  const highlightOn = caps.highlightWord && cue?.activeWordIndex != null && cue.words.length > 0;
 
   return (
     <Dialog open={clip !== null} onOpenChange={(o) => !o && onClose()}>
@@ -399,24 +349,29 @@ export function ClipEditDialog({
         <DialogHeader>
           <DialogTitle>Clip editor</DialogTitle>
           <DialogDescription>
-            Preview the 9:16 short, trim start/end, then save or export. Not a full timeline editor.
+            Preview the 9:16 short with captions, trim, then save or export.
           </DialogDescription>
         </DialogHeader>
 
         {!clip ? null : (
           <div className="space-y-4">
-            {/* 9:16 preview */}
-            <div className="mx-auto w-full max-w-[280px]">
-              <div className="relative aspect-[9/16] overflow-hidden rounded-xl border border-border bg-black">
+            <div className="mx-auto w-full max-w-[260px]">
+              <div className="relative aspect-[9/16] overflow-hidden rounded-xl border border-border bg-background">
                 {videoUrl ? (
                   <video
                     ref={videoRef}
                     src={videoUrl}
                     muted={muted}
                     playsInline
+                    preload="auto"
                     className="size-full object-cover"
                     style={{ objectPosition }}
                     onClick={togglePlay}
+                    onPlay={onVideoPlay}
+                    onPause={onVideoPause}
+                    onEnded={onVideoPause}
+                    onLoadedMetadata={onLoaded}
+                    onSeeked={(e) => !playing && setCurrent(e.currentTarget.currentTime)}
                   />
                 ) : (
                   <div className="flex size-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-muted-foreground">
@@ -433,11 +388,27 @@ export function ClipEditDialog({
                   </div>
                 )}
 
-                {/* Simple caption overlay */}
-                {videoUrl && captionsEnabled && captionLine ? (
-                  <div className="pointer-events-none absolute inset-x-2 bottom-[18%] text-center">
-                    <span className="inline-block rounded bg-black/55 px-2 py-1 text-sm font-semibold uppercase leading-tight text-white shadow">
-                      {captionLine}
+                {videoUrl && cue ? (
+                  <div
+                    className={`pointer-events-none absolute inset-x-3 text-center ${POSITION_CLASS[caps.position]}`}
+                  >
+                    <span
+                      className={`inline-block font-display font-extrabold leading-tight text-foreground [text-shadow:0_0_3px_hsl(0_0%_0%),0_2px_4px_hsl(0_0%_0%)] ${SIZE_CLASS[caps.size]} ${preset.uppercase ? "uppercase" : ""}`}
+                    >
+                      {cue.words.length
+                        ? cue.words.map((w, i) => (
+                            <span
+                              key={i}
+                              className={
+                                highlightOn && i === cue.activeWordIndex
+                                  ? "text-accent"
+                                  : undefined
+                              }
+                            >
+                              {w.text.trim()}{" "}
+                            </span>
+                          ))
+                        : cue.text}
                     </span>
                   </div>
                 ) : null}
@@ -446,65 +417,205 @@ export function ClipEditDialog({
                   <Badge variant="secondary" className="text-[10px]">
                     9:16
                   </Badge>
-                  <Badge variant="outline" className="border-white/30 bg-black/40 text-[10px] text-white">
+                  <Badge variant="outline" className="bg-background/60 text-[10px]">
                     {reframeLoading ? (
                       <span className="flex items-center gap-1">
-                        <Loader2 className="size-3 animate-spin" /> Reframe…
+                        <Loader2 className="size-3 animate-spin" /> Finding face…
                       </span>
+                    ) : usingSmart ? (
+                      "Smart Reframe"
                     ) : (
-                      reframeLabel
+                      "Center Crop"
                     )}
                   </Badge>
                 </div>
               </div>
             </div>
 
-            {/* Transport */}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button size="sm" variant="secondary" onClick={togglePlay} disabled={!videoUrl}>
+                {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+                {playing ? "Pause" : "Play"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={restart} disabled={!videoUrl}>
+                <RotateCcw className="size-4" /> Restart
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setMuted((m) => !m)} disabled={!videoUrl}>
+                {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+                {muted ? "Unmute" : "Mute"}
+              </Button>
+              <span className="font-mono text-xs text-muted-foreground">
+                {formatTimecode(Math.max(0, current - start))} / {formatTimecode(duration)}
+              </span>
+            </div>
+            <input
+              type="range"
+              aria-label="Seek within clip"
+              min={start}
+              max={end}
+              step={0.05}
+              value={Math.min(end, Math.max(start, current))}
+              onChange={(e) => seek(Number(e.target.value))}
+              className="w-full accent-primary"
+              disabled={!videoUrl}
+            />
+
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <Button size="sm" variant="secondary" onClick={togglePlay} disabled={!videoUrl}>
-                  {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
-                  {playing ? "Pause" : "Play"}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={restart} disabled={!videoUrl}>
-                  <RotateCcw className="size-4" /> Restart
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setMuted((m) => !m)}
-                  disabled={!videoUrl}
-                >
-                  {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
-                  {muted ? "Unmute" : "Mute"}
-                </Button>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {formatTimecode(Math.max(0, current - start))} / {formatTimecode(duration)}
-                </span>
+              <Label htmlFor="clip-title">Title</Label>
+              <Input id="clip-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="clip-start">Start (sec)</Label>
+                <Input
+                  id="clip-start"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  value={start}
+                  onFocus={pushHistory}
+                  onChange={(e) => setStartClamped(Number(e.target.value) || 0)}
+                />
               </div>
-              <Progress value={progressPct} className="h-1.5" />
+              <div className="space-y-2">
+                <Label htmlFor="clip-end">End (sec)</Label>
+                <Input
+                  id="clip-end"
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  value={end}
+                  onFocus={pushHistory}
+                  onChange={(e) => setEndClamped(Number(e.target.value) || 0)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Duration</Label>
+                <Input readOnly value={`${Math.round(duration * 10) / 10}s`} />
+              </div>
+            </div>
+            {error ? <p className="text-xs text-destructive">{error}</p> : null}
+
+            <div className="rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Captions (preview + export)</p>
+                <Switch
+                  checked={caps.enabled}
+                  onCheckedChange={(v) => onCaptionSettingsChange?.({ enabled: v })}
+                  disabled={!onCaptionSettingsChange}
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Field label="Style">
+                  <Select
+                    value={caps.style}
+                    onValueChange={(v) => onCaptionSettingsChange?.({ style: v as CaptionStyleId })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(Object.keys(CAPTION_PRESETS) as CaptionStyleId[]).map((id) => (
+                        <SelectItem key={id} value={id}>
+                          {CAPTION_PRESETS[id].label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Position">
+                  <Select
+                    value={caps.position}
+                    onValueChange={(v) =>
+                      onCaptionSettingsChange?.({ position: v as CaptionPosition })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="top">Top</SelectItem>
+                      <SelectItem value="center">Center</SelectItem>
+                      <SelectItem value="lower">Lower</SelectItem>
+                      <SelectItem value="bottom">Bottom</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Size">
+                  <Select
+                    value={caps.size}
+                    onValueChange={(v) => onCaptionSettingsChange?.({ size: v as CaptionSize })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="small">Small</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="large">Large</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              {caps.enabled && !cues.length ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  No transcript lines fall inside this clip, so there are no captions to show.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-border p-3">
+                <p className="mb-2 text-sm font-medium">Crop / reframe</p>
+                <Select value={reframeMode} onValueChange={(v) => setReframeMode(v as ReframeMode)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="smart">Smart Reframe (face)</SelectItem>
+                    <SelectItem value="center">Center crop</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Preview only for now — export still prefers smart reframe with center fallback.
+                </p>
+              </div>
+              <div className="space-y-3 rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Dead-air cleanup</p>
+                  <Switch
+                    checked={!!cleanupSettings?.removeDeadAir}
+                    onCheckedChange={(v) => onCleanupSettingsChange?.({ removeDeadAir: v })}
+                    disabled={!onCleanupSettingsChange}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Filler words</p>
+                  <Switch
+                    checked={!!cleanupSettings?.removeFillers}
+                    onCheckedChange={(v) => onCleanupSettingsChange?.({ removeFillers: v })}
+                    disabled={!onCleanupSettingsChange}
+                  />
+                </div>
+              </div>
             </div>
 
             <ClipTimeline
-              durationSec={Number.isFinite(limit) ? limit : Math.max(end, 1)}
+              durationSec={total}
+              viewStartSec={viewStart}
+              viewEndSec={viewEnd}
               startSec={start}
               endSec={end}
               playheadSec={current}
               captions={captionBands}
               removals={removals}
-              onSeek={(t) => {
-                const el = videoRef.current;
-                if (el) el.currentTime = t;
-                setCurrent(t);
-              }}
+              onSeek={seek}
               onChangeRange={(s, e) => {
-                pushHistory();
                 setStart(Math.round(s * 10) / 10);
                 setEnd(Math.round(e * 10) / 10);
               }}
             />
-
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2">
               <Button size="sm" variant="ghost" disabled={!undoStack.length} onClick={undo}>
                 Undo
               </Button>
@@ -513,72 +624,23 @@ export function ClipEditDialog({
               </Button>
             </div>
 
-            {/* Title + numeric trim */}
-
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label htmlFor="clip-title">Title</Label>
-                <Input id="clip-title" value={title} onChange={(e) => setTitle(e.target.value)} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="clip-start">Start (seconds)</Label>
-                  <Input
-                    id="clip-start"
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    value={start}
-                    onChange={(e) => clampStart(Number(e.target.value) || 0)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="clip-end">End (seconds)</Label>
-                  <Input
-                    id="clip-end"
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    value={end}
-                    onChange={(e) => clampEnd(Number(e.target.value) || 0)}
-                  />
-                </div>
-              </div>
-              <p className={`text-xs ${error ? "text-destructive" : "text-muted-foreground"}`}>
-                {error ?? `Length: ${Math.round(duration * 10) / 10}s`}
-              </p>
-            </div>
-
-            {/* Key information */}
             <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs">
-              <p className="mb-2 text-sm font-medium">Clip info</p>
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-3">
-                <Info label="Duration" value={`${Math.round(duration * 10) / 10}s`} />
-                <Info
-                  label="Original range"
-                  value={`${formatTimecode(start)} – ${formatTimecode(end)}`}
-                />
-                <Info
-                  label="Mode"
-                  value={`${MODE_META[clip.mode].icon} ${MODE_META[clip.mode].label}`}
-                />
+                <Info label="Original range" value={`${formatTimecode(start)} – ${formatTimecode(end)}`} />
                 {typeof clip.score === "number" ? (
                   <Info label="Rule Score" value={String(clip.score)} />
                 ) : null}
                 {typeof clip.engagementPotential === "number" ? (
-                  <Info label="Engagement Potential" value={String(clip.engagementPotential)} />
+                  <Info label="Engagement" value={String(clip.engagementPotential)} />
                 ) : null}
-                {(clip.qualityMatched != null || clip.rulesMatched != null) && (
-                  <Info
-                    label="Quality signals"
-                    value={`${clip.qualityMatched ?? clip.rulesMatched}/${clip.qualityTotal ?? clip.rulesTotal}`}
-                  />
-                )}
+                <Info label="Captions" value={caps.enabled ? "On" : "Off"} />
+                <Info label="Reframe" value={usingSmart ? "Smart" : "Center"} />
                 <Info
-                  label="Captions"
-                  value={captionsEnabled ? "On for export" : "Off for export"}
+                  label="Cleanup"
+                  value={
+                    cleanupSettings?.removeDeadAir || cleanupSettings?.removeFillers ? "On" : "Off"
+                  }
                 />
-                <Info label="Reframe" value={reframeLabel} />
               </dl>
               {clip.highlights?.length ? (
                 <div className="mt-2 flex flex-wrap gap-1">
@@ -589,9 +651,7 @@ export function ClipEditDialog({
                   ))}
                 </div>
               ) : null}
-              {clip.reason ? (
-                <p className="mt-2 text-muted-foreground">{clip.reason}</p>
-              ) : null}
+              {clip.reason ? <p className="mt-2 text-muted-foreground">{clip.reason}</p> : null}
             </div>
           </div>
         )}
@@ -609,9 +669,9 @@ export function ClipEditDialog({
                 variant="secondary"
                 disabled={error !== null}
                 onClick={() => {
-                  if (error) return;
-                  onSave({ title: title.trim() || clip.title, startSec: start, endSec: end });
-                  onExport({ ...clip, title: title.trim() || clip.title, startSec: start, endSec: end });
+                  const t = title.trim() || clip.title;
+                  onSave({ title: t, startSec: start, endSec: end });
+                  onExport({ ...clip, title: t, startSec: start, endSec: end });
                 }}
               >
                 Save & Export Short
@@ -630,6 +690,15 @@ export function ClipEditDialog({
   );
 }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      {children}
+    </div>
+  );
+}
+
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -637,22 +706,4 @@ function Info({ label, value }: { label: string; value: string }) {
       <dd className="font-medium text-foreground">{value}</dd>
     </div>
   );
-}
-
-/**
- * Caption overlay using the same buildCaptionCues timeline as Export Short.
- * tAbs is source timeline seconds; converted to clip-relative for cue lookup.
- */
-function liveCaption(
-  segments: TranscriptSegment[],
-  tAbs: number,
-  clipStart: number,
-  clipEnd: number,
-  captionSettings?: CaptionSettings,
-): string {
-  const settings = captionSettings ?? DEFAULT_CAPTION_SETTINGS;
-  if (!settings.enabled) return "";
-  const cues = buildCaptionCues(segments, clipStart, clipEnd, settings);
-  const tRel = tAbs - clipStart;
-  return captionTextAtTime(cues, tRel);
 }
