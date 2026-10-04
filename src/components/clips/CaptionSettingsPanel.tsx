@@ -203,6 +203,39 @@ export function CaptionSettingsPanel({
             onChange={(e) => onChange({ outline: Number(e.target.value) })}
           />
         </Field>
+        <Field label="Capitalization">
+          <Select
+            disabled={off}
+            value={settings.uppercase == null ? "style" : settings.uppercase ? "upper" : "normal"}
+            onValueChange={(v) =>
+              onChange({ uppercase: v === "style" ? undefined : v === "upper" })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="style">Style default</SelectItem>
+              <SelectItem value="upper">ALL CAPS</SelectItem>
+              <SelectItem value="normal">Normal case</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Background">
+          <Select
+            disabled={off}
+            value={settings.background ? "box" : "outline"}
+            onValueChange={(v) => onChange({ background: v === "box" })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="outline">Outline</SelectItem>
+              <SelectItem value="box">Dark box</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
       </div>
 
       <label className="flex items-center gap-2 text-sm">
