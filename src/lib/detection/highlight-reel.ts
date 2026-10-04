@@ -10,6 +10,7 @@ export interface HighlightReelOptions {
 export interface HighlightReel {
   moments: ClipCandidate[];
   plan: EditPlan;
+  message: string;
 }
 
 /** Picks top non-overlapping detected clips (by existing rank order) and stitches them in source order. */
@@ -37,6 +38,7 @@ export function buildHighlightReel(
   });
   return {
     moments: picked,
+    message: `${picked.length} moment${picked.length === 1 ? "" : "s"}, ${Math.round(out)}s`,
     plan: {
       segments,
       outputDurationSec: out,
