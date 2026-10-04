@@ -645,111 +645,54 @@ function WorkspacePage() {
       return;
     }
     const selected = project.clips.filter((c) => selectedClipIds.has(c.id));
-    if (!selected.length) {
-      toast.error("Select at least one clip.");
-      return;
-    }
-    if (selected.length > 12) {
-      toast.error("Browser limit: export at most 12 clips at a time.");
-      return;
-    }
     const file = getProjectFile(project.id);
-    if (!file) {
-      toast.error("Select the original video file again before exporting.");
+    const invalid = validateBatch(selected.length, !!file);
+    if (invalid || !file) {
+      toast.error(invalid ?? "Select the original video file again before exporting.");
       return;
     }
     batchCancelRemainingRef.current = false;
     setBatchRunning(true);
-    const queue: BatchQueueItem[] = selected.map((clip) => ({
-      clip,
-      status: "waiting",
-      progress: null,
-    }));
-    setBatchQueue(queue);
+    setBatchQueue(selected.map((clip) => ({ clip, status: "waiting", progress: null })));
 
-    let completed = 0;
-    let failed = 0;
-
-    for (let i = 0; i < queue.length; i++) {
-      if (batchCancelRemainingRef.current) {
-        setBatchQueue((q) =>
-          q.map((item, idx) =>
-            idx >= i && item.status === "waiting"
-              ? { ...item, status: "cancelled" }
-              : item,
+    let result = { completed: 0, failed: 0, cancelled: 0 };
+    try {
+      result = await runBatch({
+        items: selected,
+        shouldCancelRemaining: () => batchCancelRemainingRef.current,
+        onActive: (i, controller) => {
+          batchAbortRef.current = controller;
+          renderAbortRef.current = controller;
+          setRenderingClipId(i === null ? null : selected[i]!.id);
+          if (i === null) setRenderState({ label: "", progress: null });
+        },
+        onUpdate: (i, patch) =>
+          setBatchQueue((q) =>
+            q.map((item, idx) =>
+              idx !== i
+                ? item
+                : patch.status === "cancelled" && item.status !== "waiting" && item.status !== "rendering"
+                  ? item
+                  : { ...item, ...patch },
+            ),
           ),
-        );
-        break;
-      }
-      const clip = queue[i]!.clip;
-      const controller = new AbortController();
-      batchAbortRef.current = controller;
-      renderAbortRef.current = controller;
-      setRenderingClipId(clip.id);
-      setBatchQueue((q) =>
-        q.map((item, idx) =>
-          idx === i ? { ...item, status: "rendering", label: "Preparing…", progress: 0 } : item,
-        ),
-      );
-      try {
-        // Reuse single-clip export by calling exportVideo logic inline via dynamic import path
-        await exportVideoForBatch(clip, file, controller, (label, progress) => {
-          setRenderState({ label, progress });
-          setBatchQueue((q) =>
-            q.map((item, idx) =>
-              idx === i ? { ...item, status: "rendering", label, progress } : item,
-            ),
-          );
-        });
-        completed += 1;
-        setBatchQueue((q) =>
-          q.map((item, idx) =>
-            idx === i ? { ...item, status: "done", progress: 1, label: "Done" } : item,
-          ),
-        );
-      } catch (e) {
-        const err = e as { code?: string; message?: string };
-        if (err.code === "cancelled" || controller.signal.aborted) {
-          setBatchQueue((q) =>
-            q.map((item, idx) =>
-              idx === i ? { ...item, status: "cancelled", label: "Cancelled" } : item,
-            ),
-          );
-          if (batchCancelRemainingRef.current) {
-            setBatchQueue((q) =>
-              q.map((item, idx) =>
-                idx > i && item.status === "waiting"
-                  ? { ...item, status: "cancelled" }
-                  : item,
-              ),
-            );
-            break;
-          }
-        } else {
-          failed += 1;
-          setBatchQueue((q) =>
-            q.map((item, idx) =>
-              idx === i
-                ? {
-                    ...item,
-                    status: "failed",
-                    error: err.message ?? "Export failed",
-                    label: "Failed",
-                  }
-                : item,
-            ),
-          );
-        }
-      } finally {
-        batchAbortRef.current = null;
-        renderAbortRef.current = null;
-        setRenderingClipId(null);
-        setRenderState({ label: "", progress: null });
-      }
+        render: (clip, _i, controller, onProgress) =>
+          exportVideoForBatch(clip, file, controller, (label, progress) => {
+            setRenderState({ label, progress });
+            onProgress(label, progress);
+          }),
+      });
+    } finally {
+      batchAbortRef.current = null;
+      renderAbortRef.current = null;
+      setRenderingClipId(null);
+      setRenderState({ label: "", progress: null });
+      setBatchRunning(false);
     }
-
-    setBatchRunning(false);
-    toast.message(`Batch finished · ${completed} done · ${failed} failed`);
+    toast.message(
+      `Batch finished · ${result.completed} done · ${result.failed} failed` +
+        (result.cancelled ? ` · ${result.cancelled} cancelled` : ""),
+    );
   };
 
   /** Single-clip render used by batch (same pipeline as Export Short). */

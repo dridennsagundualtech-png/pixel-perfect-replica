@@ -100,7 +100,7 @@ Candidates:
 ${body}`;
 }
 
-function parseResponse(raw: string, fallback: RankedCandidate[]): RankedCandidate[] {
+export function parseResponse(raw: string, fallback: RankedCandidate[]): RankedCandidate[] {
   const start = raw.indexOf("[");
   const end = raw.lastIndexOf("]");
   if (start < 0 || end <= start) return fallback;
@@ -128,7 +128,9 @@ function parseResponse(raw: string, fallback: RankedCandidate[]): RankedCandidat
         : prev.explanations;
       byId.set(row.id, {
         id: row.id,
-        engagementPotential: clamp100(Number(row.engagementPotential) || prev.engagementPotential),
+        engagementPotential: Number.isFinite(Number(row.engagementPotential)) && row.engagementPotential !== null && row.engagementPotential !== undefined
+          ? clamp100(Number(row.engagementPotential))
+          : prev.engagementPotential,
         factorScores,
         explanations,
       });
