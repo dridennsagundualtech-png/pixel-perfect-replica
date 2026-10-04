@@ -159,10 +159,7 @@ async function findNoisyGaps(
   // Safety guard: avoid loading very large source videos into browser memory.
   const MAX_AUDIO_CHECK_BYTES = 150 * 1024 * 1024;
   if (file.size > MAX_AUDIO_CHECK_BYTES) {
-    console.info(
-      "[silence] Skipping full-file audio confirmation for large source:",
-      file.size,
-    );
+    console.info("[silence] Skipping full-file audio confirmation for large source:", file.size);
     return null;
   }
 

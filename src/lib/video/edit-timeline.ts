@@ -183,9 +183,7 @@ function identityPlan(clipStart: number, clipEnd: number, warnings: string[]): E
   };
 }
 
-function mergeRanges(
-  ranges: RemovalRange[],
-): RemovalRange[] {
+function mergeRanges(ranges: RemovalRange[]): RemovalRange[] {
   if (!ranges.length) return [];
   const sorted = [...ranges].sort((a, b) => a.startSec - b.startSec || a.endSec - b.endSec);
   const out: RemovalRange[] = [];

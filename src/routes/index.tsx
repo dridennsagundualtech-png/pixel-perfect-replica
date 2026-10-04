@@ -44,9 +44,19 @@ function Dashboard() {
 
       <section className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat icon={Video} label="Videos processed" value="0" note="No processing run yet" />
-        <Stat icon={Scissors} label="Clips created" value={String(clipCount)} note="Exported clips" />
+        <Stat
+          icon={Scissors}
+          label="Clips created"
+          value={String(clipCount)}
+          note="Exported clips"
+        />
         <Stat icon={Clock} label="Processing time" value="—" note="Tracked once jobs run" />
-        <Stat icon={HardDrive} label="Storage used" value="—" note="Tracked once uploads are stored" />
+        <Stat
+          icon={HardDrive}
+          label="Storage used"
+          value="—"
+          note="Tracked once uploads are stored"
+        />
       </section>
 
       <section>

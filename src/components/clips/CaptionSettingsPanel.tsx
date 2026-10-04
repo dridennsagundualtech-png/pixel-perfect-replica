@@ -211,34 +211,34 @@ export function CaptionSettingsPanel({
           checked={settings.highlightWord}
           onCheckedChange={(v) => onChange({ highlightWord: v })}
         />
-        
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">End pad after last word (sec)</Label>
-          <Input
-            type="number"
-            min={0}
-            max={0.35}
-            step={0.05}
-            disabled={off}
-            value={settings.endPadSec ?? 0.15}
-            onChange={(e) => onChange({ endPadSec: Number(e.target.value) })}
-          />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">End pad after last word (sec)</Label>
+            <Input
+              type="number"
+              min={0}
+              max={0.35}
+              step={0.05}
+              disabled={off}
+              value={settings.endPadSec ?? 0.15}
+              onChange={(e) => onChange({ endPadSec: Number(e.target.value) })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              Silence gap to split groups (sec)
+            </Label>
+            <Input
+              type="number"
+              min={0.25}
+              max={2}
+              step={0.05}
+              disabled={off}
+              value={settings.groupPauseSec ?? 0.55}
+              onChange={(e) => onChange({ groupPauseSec: Number(e.target.value) })}
+            />
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Silence gap to split groups (sec)</Label>
-          <Input
-            type="number"
-            min={0.25}
-            max={2}
-            step={0.05}
-            disabled={off}
-            value={settings.groupPauseSec ?? 0.55}
-            onChange={(e) => onChange({ groupPauseSec: Number(e.target.value) })}
-          />
-        </div>
-      </div>
-
         Highlight the word being spoken
       </label>
 
@@ -274,80 +274,83 @@ export function CaptionSettingsPanel({
       {/* Custom presets */}
       <div className="space-y-2 border-t border-border pt-3">
         <p className="text-xs font-medium">
-      {/* Custom font (your paid .ttf / .otf) */}
-      <div className="space-y-2 border-t border-border pt-3">
-        <p className="text-xs font-medium">Caption font</p>
-        <p className="text-[11px] text-muted-foreground">
-          Upload a .ttf or .otf you own. Stored only in this browser. Leave empty to use Anton.
-        </p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Font family name</Label>
-            <Input
-              disabled={off}
-              placeholder="e.g. Montserrat Bold"
-              value={settings.fontFamily ?? fontMeta?.familyName ?? ""}
-              onChange={(e) => {
-                onChange({ fontFamily: e.target.value });
-                void updateCustomFontFamilyName(e.target.value);
-              }}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Use the real name of the font (as in the file), not the filename only.
+          {/* Custom font (your paid .ttf / .otf) */}
+          <div className="space-y-2 border-t border-border pt-3">
+            <p className="text-xs font-medium">Caption font</p>
+            <p className="text-[11px] text-muted-foreground">
+              Upload a .ttf or .otf you own. Stored only in this browser. Leave empty to use Anton.
             </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Font file</Label>
-            <Input
-              type="file"
-              accept=".ttf,.otf,font/ttf,font/otf"
-              disabled={off || fontBusy}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (!file) return;
-                setFontBusy(true);
-                void (async () => {
-                  try {
-                    const saved = await saveCustomCaptionFont(file, settings.fontFamily || undefined);
-                    clearCaptionFontCache();
-                    setFontMeta({ fileName: saved.fileName, familyName: saved.familyName });
-                    onChange({ fontFamily: saved.familyName });
-                  } catch (err) {
-                    console.warn(err);
-                  } finally {
-                    setFontBusy(false);
-                  }
-                })();
-              }}
-            />
-            {fontMeta ? (
-              <p className="text-[11px] text-muted-foreground">
-                Loaded: {fontMeta.fileName} · {fontMeta.familyName}{" "}
-                <button
-                  type="button"
-                  className="text-primary underline"
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Font family name</Label>
+                <Input
                   disabled={off}
-                  onClick={() => {
+                  placeholder="e.g. Montserrat Bold"
+                  value={settings.fontFamily ?? fontMeta?.familyName ?? ""}
+                  onChange={(e) => {
+                    onChange({ fontFamily: e.target.value });
+                    void updateCustomFontFamilyName(e.target.value);
+                  }}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use the real name of the font (as in the file), not the filename only.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Font file</Label>
+                <Input
+                  type="file"
+                  accept=".ttf,.otf,font/ttf,font/otf"
+                  disabled={off || fontBusy}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    setFontBusy(true);
                     void (async () => {
-                      await clearCustomCaptionFont();
-                      clearCaptionFontCache();
-                      setFontMeta(null);
-                      onChange({ fontFamily: undefined });
+                      try {
+                        const saved = await saveCustomCaptionFont(
+                          file,
+                          settings.fontFamily || undefined,
+                        );
+                        clearCaptionFontCache();
+                        setFontMeta({ fileName: saved.fileName, familyName: saved.familyName });
+                        onChange({ fontFamily: saved.familyName });
+                      } catch (err) {
+                        console.warn(err);
+                      } finally {
+                        setFontBusy(false);
+                      }
                     })();
                   }}
-                >
-                  Remove
-                </button>
-              </p>
-            ) : (
-              <p className="text-[11px] text-muted-foreground">Using default font (Anton)</p>
-            )}
+                />
+                {fontMeta ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Loaded: {fontMeta.fileName} · {fontMeta.familyName}{" "}
+                    <button
+                      type="button"
+                      className="text-primary underline"
+                      disabled={off}
+                      onClick={() => {
+                        void (async () => {
+                          await clearCustomCaptionFont();
+                          clearCaptionFontCache();
+                          setFontMeta(null);
+                          onChange({ fontFamily: undefined });
+                        })();
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">Using default font (Anton)</p>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-
-Custom presets (this browser)</p>
+          Custom presets (this browser)
+        </p>
         <div className="flex flex-wrap gap-2">
           <Input
             className="max-w-[160px]"

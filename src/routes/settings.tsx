@@ -43,10 +43,7 @@ function SettingsPage() {
       <PageHeader title="Settings" subtitle="Defaults applied to every new project." />
 
       <div className="space-y-6">
-        <Section
-          title="AI"
-          description="AI is always optional — rule mode works without it."
-        >
+        <Section title="AI" description="AI is always optional — rule mode works without it.">
           <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-4 py-3">
             <div>
               <Label>Use AI</Label>
@@ -136,7 +133,10 @@ function SettingsPage() {
           </Field>
         </Section>
 
-        <Section title="Storage" description="Uploads stay on your device until storage is connected.">
+        <Section
+          title="Storage"
+          description="Uploads stay on your device until storage is connected."
+        >
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Storage used</span>

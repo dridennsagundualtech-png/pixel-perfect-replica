@@ -9,8 +9,11 @@ import type { DetectionRule } from "../src/lib/detection/types";
 import { NOW, PLAIN, RICH, seg, sentences } from "./helpers";
 
 const rules = createDefaultRules();
-const run = async (segments: ReturnType<typeof sentences>, r: DetectionRule[] = rules, mode: "rules" | "ai" | "hybrid" = "rules") =>
-  runDetection({ segments }, r, { mode, now: NOW, ai: createDefaultAiSettings() });
+const run = async (
+  segments: ReturnType<typeof sentences>,
+  r: DetectionRule[] = rules,
+  mode: "rules" | "ai" | "hybrid" = "rules",
+) => runDetection({ segments }, r, { mode, now: NOW, ai: createDefaultAiSettings() });
 const setRule = (type: string, patch: Partial<DetectionRule>) =>
   rules.map((r) => (r.type === type ? { ...r, ...patch } : r));
 
@@ -27,17 +30,33 @@ describe("candidate generation", () => {
   });
   it("returns nothing for a transcript shorter than the minimum", async () => {
     const prepared = prepareSegments(sentences(PLAIN.slice(0, 2)));
-    expect(generateCandidates(prepared, { minDurationSec: 20, maxDurationSec: 60 }).candidates).toHaveLength(0);
+    expect(
+      generateCandidates(prepared, { minDurationSec: 20, maxDurationSec: 60 }).candidates,
+    ).toHaveLength(0);
   });
   it("caps very long transcripts", async () => {
-    const long = sentences(Array.from({ length: 300 }, (_, i) => `Sentence number ${i} is here.`), 3);
-    const res = generateCandidates(prepareSegments(long), { minDurationSec: 10, maxDurationSec: 60, maxCandidates: 50 });
+    const long = sentences(
+      Array.from({ length: 300 }, (_, i) => `Sentence number ${i} is here.`),
+      3,
+    );
+    const res = generateCandidates(prepareSegments(long), {
+      minDurationSec: 10,
+      maxDurationSec: 60,
+      maxCandidates: 50,
+    });
     expect(res.candidates.length).toBeLessThanOrEqual(50);
     expect(res.truncated).toBe(true);
   });
   it("prefers sentence-boundary windows", async () => {
-    const segs = [seg("a", 0, 10, "This starts a sentence."), seg("b", 10, 20, "and keeps going without end"), seg("c", 20, 30, "Then it ends.")];
-    const res = generateCandidates(prepareSegments(segs), { minDurationSec: 15, maxDurationSec: 40 });
+    const segs = [
+      seg("a", 0, 10, "This starts a sentence."),
+      seg("b", 10, 20, "and keeps going without end"),
+      seg("c", 20, 30, "Then it ends."),
+    ];
+    const res = generateCandidates(prepareSegments(segs), {
+      minDurationSec: 15,
+      maxDurationSec: 40,
+    });
     expect(res.candidates.every((c) => c.endsAtSentence)).toBe(true);
   });
   it("reads bounds from the length rules", async () => {
@@ -57,7 +76,10 @@ describe("rule engine", () => {
     expect(isRuleActive({ ...r, enabled: false })).toBe(false);
   });
   it("measures silence, speech density and fillers", async () => {
-    const segs = prepareSegments([seg("a", 0, 5, "Um so basically this is it."), seg("b", 9, 14, "And here we go.")]);
+    const segs = prepareSegments([
+      seg("a", 0, 5, "Um so basically this is it."),
+      seg("b", 9, 14, "And here we go."),
+    ]);
     const m = measureWindow(segs, 0, 14);
     expect(m.maxSilenceSec).toBeCloseTo(4, 5);
     expect(m.speechDensityPct).toBeLessThan(100);
@@ -73,24 +95,30 @@ describe("rule engine", () => {
     expect(rich.score!).toBeLessThanOrEqual(100);
   });
   it("rejects clips over the silence limit", async () => {
-    const s = sentences(PLAIN).map((x, i) => (i >= 3 ? { ...x, startSec: x.startSec + 5, endSec: x.endSec + 5 } : x));
+    const s = sentences(PLAIN).map((x, i) =>
+      i >= 3 ? { ...x, startSec: x.startSec + 5, endSec: x.endSec + 5 } : x,
+    );
     const res = await run(s);
     expect(res.candidates.some((c) => c.startSec <= 12 && c.endSec >= 23)).toBe(false);
   });
   it("rejects clips under min / over max duration", async () => {
     expect((await run(sentences(PLAIN.slice(0, 2)))).candidates).toHaveLength(0);
     const tight = setRule("length.max", { value: 25 });
-    for (const c of (await run(sentences([...PLAIN, ...RICH]), tight)).candidates) expect(c.endSec - c.startSec).toBeLessThanOrEqual(25);
+    for (const c of (await run(sentences([...PLAIN, ...RICH]), tight)).candidates)
+      expect(c.endSec - c.startSec).toBeLessThanOrEqual(25);
   });
   it("rejects high filler density", async () => {
-    const fill = sentences(Array.from({ length: 5 }, () => "Um uh basically you know literally um it is."));
+    const fill = sentences(
+      Array.from({ length: 5 }, () => "Um uh basically you know literally um it is."),
+    );
     expect((await run(fill)).candidates).toHaveLength(0);
   });
   it("removes overlapping duplicates", async () => {
     const cands = (await run(sentences([...PLAIN, ...RICH, ...PLAIN]))).candidates;
     for (let i = 0; i < cands.length; i++)
       for (let j = i + 1; j < cands.length; j++) {
-        const a = cands[i]!, b = cands[j]!;
+        const a = cands[i]!,
+          b = cands[j]!;
         const ov = Math.max(0, Math.min(a.endSec, b.endSec) - Math.max(a.startSec, b.startSec));
         expect(ov / Math.min(a.endSec - a.startSec, b.endSec - b.startSec)).toBeLessThan(0.5);
       }
@@ -102,12 +130,19 @@ describe("rule engine", () => {
   });
   it("handles empty / malformed transcripts", async () => {
     expect((await runDetection(undefined, rules, { now: NOW })).status).toBe("no-transcript");
-    expect((await runDetection({ segments: [] }, rules, { now: NOW })).status).toBe("empty-transcript");
-    const v = validateTranscript([{ id: "x", startSec: 5, endSec: 2, text: "bad" }, seg("ok", 0, 1, "fine")]);
+    expect((await runDetection({ segments: [] }, rules, { now: NOW })).status).toBe(
+      "empty-transcript",
+    );
+    const v = validateTranscript([
+      { id: "x", startSec: 5, endSec: 2, text: "bad" },
+      seg("ok", 0, 1, "fine"),
+    ]);
     expect(v.segments.map((s) => s.id)).toEqual(["ok"]);
   });
   it("reports invalid rules", async () => {
-    expect((await run(sentences(PLAIN), setRule("length.min", { value: 90 }))).status).toBe("invalid-rules");
+    expect((await run(sentences(PLAIN), setRule("length.min", { value: 90 }))).status).toBe(
+      "invalid-rules",
+    );
   });
 });
 

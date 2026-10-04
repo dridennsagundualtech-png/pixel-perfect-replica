@@ -118,9 +118,7 @@ export function createProject(input: {
 
 export function updateProject(id: string, patch: Partial<Project>) {
   write(
-    read().map((p) =>
-      p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p,
-    ),
+    read().map((p) => (p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p)),
   );
 }
 
@@ -152,7 +150,9 @@ export function useProjects(): { projects: Project[]; ready: boolean } {
 }
 
 export function useProject(id: string): { project?: Project | undefined; ready: boolean } {
-  const [state, setState] = useState<{ project?: Project | undefined; ready: boolean }>({ ready: false });
+  const [state, setState] = useState<{ project?: Project | undefined; ready: boolean }>({
+    ready: false,
+  });
 
   useEffect(() => {
     const sync = () => setState({ project: getProject(id), ready: true });

@@ -43,11 +43,7 @@ function seekVideo(video: HTMLVideoElement, timeSec: number): Promise<void> {
 }
 
 /** Draw a 9:16 center-or-smart crop of the current video frame. */
-function draw916(
-  video: HTMLVideoElement,
-  ctx: CanvasRenderingContext2D,
-  subjectX: number,
-): void {
+function draw916(video: HTMLVideoElement, ctx: CanvasRenderingContext2D, subjectX: number): void {
   const vw = video.videoWidth || 1280;
   const vh = video.videoHeight || 720;
   const outW = SHORT_WIDTH;

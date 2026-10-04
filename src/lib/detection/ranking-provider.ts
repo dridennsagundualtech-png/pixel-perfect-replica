@@ -118,9 +118,7 @@ function rankOne(c: RankingCandidateInput, settings: AiSettings): RankedCandidat
 
   // Detect flags: boost when enabled and signal present (never invent).
   if (settings.detect.strongHooks && (m.containsQuestion || m.containsStrongStatement)) {
-    explanations.push(
-      m.containsQuestion ? "Strong opening question" : "Strong opening statement",
-    );
+    explanations.push(m.containsQuestion ? "Strong opening question" : "Strong opening statement");
   }
   if (settings.detect.questions && m.containsQuestion) {
     /* already covered */
@@ -176,11 +174,7 @@ function scoreHook(m: RuleMetrics, has: (...p: string[]) => boolean): number {
   return Math.min(100, s);
 }
 
-function scoreCuriosity(
-  m: RuleMetrics,
-  has: (...p: string[]) => boolean,
-  text: string,
-): number {
+function scoreCuriosity(m: RuleMetrics, has: (...p: string[]) => boolean, text: string): number {
   let s = 20;
   if (m.containsQuestion) s += 25;
   if (m.containsSurprisingStatement) s += 25;

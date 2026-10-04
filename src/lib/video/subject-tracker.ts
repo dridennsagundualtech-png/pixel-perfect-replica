@@ -140,9 +140,7 @@ async function getMediapipeFace(): Promise<MediapipeFace | null> {
 }
 
 /** Chromium FaceDetector API (no extra deps). */
-async function detectNative(
-  bitmap: ImageBitmap | HTMLCanvasElement,
-): Promise<FaceBox[]> {
+async function detectNative(bitmap: ImageBitmap | HTMLCanvasElement): Promise<FaceBox[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const FD = (window as any).FaceDetector;
   if (typeof FD !== "function") return [];
@@ -201,10 +199,7 @@ function centerTrack(durationSec: number): ReframeTrack {
  * Build a reframe track for [startSec, endSec] by sampling the local video File.
  * Never throws for detection failure — returns a center track instead.
  */
-export async function trackSubject(
-  file: File,
-  opts: TrackSubjectOptions,
-): Promise<ReframeTrack> {
+export async function trackSubject(file: File, opts: TrackSubjectOptions): Promise<ReframeTrack> {
   const startSec = Math.max(0, opts.startSec);
   const endSec = Math.max(startSec + 0.1, opts.endSec);
   const durationSec = endSec - startSec;

@@ -23,7 +23,8 @@ export function loadCaptionSettings(): CaptionSettings {
     v.maxWords = Math.min(5, Math.max(2, Number(v.maxWords) || 4));
     v.maxLines = Math.min(3, Math.max(1, Number(v.maxLines) || 2));
     if (v.endPadSec != null) v.endPadSec = Math.min(0.35, Math.max(0, Number(v.endPadSec)));
-    if (v.groupPauseSec != null) v.groupPauseSec = Math.min(2, Math.max(0.25, Number(v.groupPauseSec)));
+    if (v.groupPauseSec != null)
+      v.groupPauseSec = Math.min(2, Math.max(0.25, Number(v.groupPauseSec)));
     v.enabled = v.enabled !== false;
     v.highlightWord = v.highlightWord !== false;
     if (typeof v.fontFamily === "string") v.fontFamily = v.fontFamily.trim() || undefined;
@@ -72,7 +73,10 @@ export function loadCustomCaptionPresets(): CustomCaptionPreset[] {
   }
 }
 
-export function saveCustomCaptionPreset(name: string, settings: CaptionSettings): CustomCaptionPreset[] {
+export function saveCustomCaptionPreset(
+  name: string,
+  settings: CaptionSettings,
+): CustomCaptionPreset[] {
   const list = loadCustomCaptionPresets().filter((p) => p.name !== name);
   const entry: CustomCaptionPreset = {
     id: crypto.randomUUID(),

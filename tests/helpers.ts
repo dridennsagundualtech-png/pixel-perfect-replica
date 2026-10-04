@@ -9,7 +9,9 @@ export const seg = (id: string, start: number, end: number, text: string): Trans
 
 /** n contiguous 6s sentences. */
 export function sentences(texts: string[], len = 6, offset = 0): TranscriptSegment[] {
-  return texts.map((t, i) => seg(`s${offset + i}`, offset * len + i * len, offset * len + i * len + len, t));
+  return texts.map((t, i) =>
+    seg(`s${offset + i}`, offset * len + i * len, offset * len + i * len + len, t),
+  );
 }
 
 export const PLAIN = [

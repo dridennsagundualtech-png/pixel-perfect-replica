@@ -106,7 +106,10 @@ export function ClipTimeline({
           <div
             key={i}
             title={c.label}
-            className={cn("absolute top-0.5 h-2 rounded-sm", playheadSec >= c.startSec && playheadSec < c.endSec ? "bg-accent" : "bg-accent/45")}
+            className={cn(
+              "absolute top-0.5 h-2 rounded-sm",
+              playheadSec >= c.startSec && playheadSec < c.endSec ? "bg-accent" : "bg-accent/45",
+            )}
             style={{
               left: pct(c.startSec),
               width: wpct(Math.max(0.05, Math.min(c.endSec, v1) - Math.max(c.startSec, v0))),

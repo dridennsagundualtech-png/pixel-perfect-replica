@@ -483,9 +483,9 @@ export async function renderClip(req: VideoRenderRequest): Promise<VideoRenderRe
         } else {
           console.warn("audio post pass failed", logTail.join("\n"));
           await ff.deleteFile("final.mp4").catch(() => undefined);
-          audioWarning = "Music / audio enhance couldn't be applied, so the original audio was kept.";
+          audioWarning =
+            "Music / audio enhance couldn't be applied, so the original audio was kept.";
         }
-      
       } catch (e) {
         if (e instanceof RenderError) throw e;
         console.error("audio post pass error", e);

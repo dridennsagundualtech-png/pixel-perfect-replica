@@ -14,7 +14,10 @@ const relaxed = createDefaultRules().map((r) =>
 );
 console.log(
   "\n" +
-    formatDetectionReport(await runSampleDetection(relaxed), "Sample transcript — measurable rules only"),
+    formatDetectionReport(
+      await runSampleDetection(relaxed),
+      "Sample transcript — measurable rules only",
+    ),
 );
 
 const a = JSON.stringify((await runSampleDetection()).candidates);

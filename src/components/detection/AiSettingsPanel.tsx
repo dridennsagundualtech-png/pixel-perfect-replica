@@ -51,8 +51,8 @@ export function AiSettingsPanel({
           Ranking factors
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Weights for local Engagement Potential ranking (AI / Hybrid modes). Free and offline —
-          not a prediction of reach.
+          Weights for local Engagement Potential ranking (AI / Hybrid modes). Free and offline — not
+          a prediction of reach.
         </p>
         <div className="mt-4 grid gap-5 sm:grid-cols-2">
           {AI_FACTORS.map((factor) => (
@@ -105,9 +105,9 @@ export function AiSettingsPanel({
 
       <p className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
         <strong className="text-foreground">Engagement Potential</strong> ranks moments from the
-        transcript using your factor weights. It is never a virality guarantee. Rule Mode stays fully
-        deterministic and does not use these weights. Hybrid applies hard rule filters first, then
-        ranks survivors.
+        transcript using your factor weights. It is never a virality guarantee. Rule Mode stays
+        fully deterministic and does not use these weights. Hybrid applies hard rule filters first,
+        then ranks survivors.
       </p>
     </div>
   );
