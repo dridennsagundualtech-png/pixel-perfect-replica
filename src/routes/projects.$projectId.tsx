@@ -17,6 +17,14 @@ import { clipFileName } from "@/lib/video/clip-range";
 import { useCaptionSettings } from "@/lib/video/caption-settings";
 import { CaptionSettingsPanel } from "@/components/clips/CaptionSettingsPanel";
 import { useCleanupSettings } from "@/lib/video/cleanup-settings";
+import { AudioEnhancePanel } from "@/components/clips/AudioEnhancePanel";
+import {
+  DEFAULT_AUDIO_ENHANCE,
+  loadAudioEnhanceSettings,
+  saveAudioEnhanceSettings,
+  type AudioEnhanceSettings,
+} from "@/lib/video/audio-enhance";
+import { useExportExtras } from "@/lib/video/export-extras";
 import { CleanupSettingsPanel } from "@/components/clips/CleanupSettingsPanel";
 import { AiSettingsPanel } from "@/components/detection/AiSettingsPanel";
 import { DetectionModeSelector } from "@/components/detection/DetectionModeSelector";
@@ -114,6 +122,11 @@ function WorkspacePage() {
   const renderAbortRef = useRef<AbortController | null>(null);
   const [captionSettings, updateCaptionSettings] = useCaptionSettings();
   const [cleanupSettings, updateCleanupSettings] = useCleanupSettings();
+  const [audioEnhance, setAudioEnhance] = useState<AudioEnhanceSettings>(DEFAULT_AUDIO_ENHANCE);
+  useEffect(() => setAudioEnhance(loadAudioEnhanceSettings()), []);
+  const updateAudioEnhance = (patch: Partial<AudioEnhanceSettings>) =>
+    setAudioEnhance(saveAudioEnhanceSettings(patch));
+  const exportExtras = useExportExtras();
   useEffect(() => () => renderAbortRef.current?.abort(), []);
 
   const seek = useCallback((sec: number) => {
@@ -369,6 +382,9 @@ function WorkspacePage() {
         reframe: { source: "center", points: [{ timeSec: 0, x: 0.5, confidence: 0 }] },
         editPlan: reel.plan,
         captionAss,
+        audioEnhance,
+        flip: exportExtras.flip,
+        music: exportExtras.music,
         // Audio enhance off for reel reliability
         onProgress: (p) =>
           setRenderState(
@@ -564,6 +580,9 @@ function WorkspacePage() {
         reframe,
         editPlan: plan.isIdentity ? undefined : plan,
         captionAss,
+        audioEnhance,
+        flip: exportExtras.flip,
+        music: exportExtras.music,
         onProgress: (p) =>
           setRenderState(
             p.stage === "loading"
@@ -590,6 +609,7 @@ function WorkspacePage() {
       });
       if (result.captionWarning) toast.warning(result.captionWarning);
       if (result.cleanupWarning) toast.warning(result.cleanupWarning);
+      if (result.audioWarning) toast.warning(result.audioWarning);
       for (const w of cleanupWarnings) {
         if (w && !result.cleanupWarning) toast.message(w);
       }
@@ -805,6 +825,9 @@ function WorkspacePage() {
       reframe,
       editPlan: plan.isIdentity ? undefined : plan,
       captionAss,
+      audioEnhance,
+      flip: exportExtras.flip,
+      music: exportExtras.music,
       onProgress: (p) =>
         onProg(
           p.stage === "loading"
@@ -1096,6 +1119,9 @@ function WorkspacePage() {
             <h2 className="mb-4 font-display text-lg font-semibold">Potential clips</h2>
             {project.clips.length > 0 ? (
               <>
+              <div className="panel mb-3 p-4">
+                <AudioEnhancePanel settings={audioEnhance} onChange={updateAudioEnhance} />
+              </div>
               <CaptionSettingsPanel settings={captionSettings} onChange={updateCaptionSettings} />
                 <CleanupSettingsPanel
                   settings={cleanupSettings}
@@ -1236,6 +1262,10 @@ function WorkspacePage() {
               onCaptionSettingsChange={updateCaptionSettings}
               cleanupSettings={cleanupSettings}
               onCleanupSettingsChange={updateCleanupSettings}
+              flip={exportExtras.flip}
+              onFlipChange={exportExtras.setFlip}
+              music={exportExtras.music}
+              onMusicChange={exportExtras.setMusic}
               onClose={() => setEditing(null)}
               onSave={saveClip}
               onExport={(c) => void exportVideo(c)}
