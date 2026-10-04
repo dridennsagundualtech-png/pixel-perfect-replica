@@ -57,10 +57,20 @@ export function BatchExportPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="ghost" onClick={onSelectAll} disabled={running || totalClips === 0}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onSelectAll}
+            disabled={running || totalClips === 0}
+          >
             Select all
           </Button>
-          <Button size="sm" variant="ghost" onClick={onClearSelection} disabled={running || selectedCount === 0}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onClearSelection}
+            disabled={running || selectedCount === 0}
+          >
             Deselect all
           </Button>
           <Button size="sm" onClick={onStart} disabled={running || selectedCount === 0}>
@@ -76,13 +86,31 @@ export function BatchExportPanel({
               Queue · {completed} done · {failed} failed
             </span>
             <div className="flex gap-1">
-              <Button size="sm" variant="ghost" className="h-7" onClick={onCancelCurrent} disabled={!running}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                onClick={onCancelCurrent}
+                disabled={!running}
+              >
                 Cancel current
               </Button>
-              <Button size="sm" variant="ghost" className="h-7" onClick={onCancelRemaining} disabled={!running}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                onClick={onCancelRemaining}
+                disabled={!running}
+              >
                 Cancel remaining
               </Button>
-              <Button size="sm" variant="ghost" className="h-7" onClick={onCancelAll} disabled={!running}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                onClick={onCancelAll}
+                disabled={!running}
+              >
                 Cancel all
               </Button>
             </div>

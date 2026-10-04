@@ -434,52 +434,61 @@ export async function renderClip(req: VideoRenderRequest): Promise<VideoRenderRe
     if (req.signal?.aborted) throw new RenderError("Export cancelled.", "cancelled");
 
     // Flip without vertical (no base filter) — apply in the post pass.
+    const finalDur = cleanupApplied ? outDur : range.durationSec;
     const flipPost = !!req.flip && !req.vertical;
     const enhance = buildAudioEnhanceFilter(req.audioEnhance);
     let audioWarning: string | undefined;
     if (code === 0 && (enhance || req.music || flipPost)) {
       req.onProgress?.({ stage: "processing", progress: 0 });
-      let musicPath: string | null = null;
-      if (req.music) {
-        musicPath = `/music_${req.music.file.name.replace(/[^\w.]/g, "_")}`;
-        await ff.writeFile(musicPath, new Uint8Array(await req.music.file.arrayBuffer()));
-      }
-      const vol = Math.min(1, Math.max(0, req.music?.volume ?? 0.2));
-      const fadeSt = Math.max(0, outDur - 1.5);
-      const voice = `[0:a]${enhance || "anull"}[voice]`;
-      const fc = musicPath
-        ? `${voice};[1:a]volume=${vol},afade=t=out:st=${fadeSt}:d=1.5[bg];[voice][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`
-        : `${voice.replace("[voice]", "[aout]")}`;
-      const post = await ff.exec([
-        "-i",
-        "out.mp4",
-        ...(musicPath ? ["-stream_loop", "-1", "-i", musicPath] : []),
-        "-filter_complex",
-        flipPost ? `[0:v]hflip[vout];${fc}` : fc,
-        "-map",
-        flipPost ? "[vout]" : "0:v:0",
-        "-map",
-        "[aout]",
-        ...(flipPost
-          ? ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p"]
-          : ["-c:v", "copy"]),
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-t",
-        String(outDur),
-        "-movflags",
-        "+faststart",
-        "final.mp4",
-      ]);
-      if (musicPath) await ff.deleteFile(musicPath).catch(() => undefined);
-      if (req.signal?.aborted) throw new RenderError("Export cancelled.", "cancelled");
-      if (post === 0) {
-        await ff.deleteFile("out.mp4").catch(() => undefined);
-        await ff.rename("final.mp4", "out.mp4");
-      } else {
-        console.warn("audio post pass failed", logTail.join("\n"));
+      try {
+        let musicPath: string | null = null;
+        if (req.music) {
+          musicPath = `/music_${req.music.file.name.replace(/[^\w.]/g, "_")}`;
+          await ff.writeFile(musicPath, new Uint8Array(await req.music.file.arrayBuffer()));
+        }
+        const vol = Math.min(1, Math.max(0, req.music?.volume ?? 0.2));
+        const fadeSt = Math.max(0, finalDur - 1.5);
+        const voice = `[0:a]${enhance || "anull"}[voice]`;
+        const fc = musicPath
+          ? `${voice};[1:a]volume=${vol},afade=t=out:st=${fadeSt}:d=1.5[bg];[voice][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`
+          : `${voice.replace("[voice]", "[aout]")}`;
+        const post = await ff.exec([
+          "-i",
+          "out.mp4",
+          ...(musicPath ? ["-stream_loop", "-1", "-i", musicPath] : []),
+          "-filter_complex",
+          flipPost ? `[0:v]hflip[vout];${fc}` : fc,
+          "-map",
+          flipPost ? "[vout]" : "0:v:0",
+          "-map",
+          "[aout]",
+          ...(flipPost
+            ? ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p"]
+            : ["-c:v", "copy"]),
+          "-c:a",
+          "aac",
+          "-b:a",
+          "128k",
+          "-t",
+          String(finalDur),
+          "-movflags",
+          "+faststart",
+          "final.mp4",
+        ]);
+        if (musicPath) await ff.deleteFile(musicPath).catch(() => undefined);
+        if (req.signal?.aborted) throw new RenderError("Export cancelled.", "cancelled");
+        if (post === 0) {
+          await ff.deleteFile("out.mp4").catch(() => undefined);
+          await ff.rename("final.mp4", "out.mp4");
+        } else {
+          console.warn("audio post pass failed", logTail.join("\n"));
+          await ff.deleteFile("final.mp4").catch(() => undefined);
+          audioWarning =
+            "Music / audio enhance couldn't be applied, so the original audio was kept.";
+        }
+      } catch (e) {
+        if (e instanceof RenderError) throw e;
+        console.error("audio post pass error", e);
         await ff.deleteFile("final.mp4").catch(() => undefined);
         audioWarning = "Music / audio enhance couldn't be applied, so the original audio was kept.";
       }

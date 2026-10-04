@@ -1,4 +1,4 @@
-/** 
+/**
  * Smart 9:16 reframe track: subject horizontal position over time.
  * Pure math — no browser APIs — so it can be unit-tested offline.
  */

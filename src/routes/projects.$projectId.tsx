@@ -9,6 +9,7 @@ import { OllamaSettingsPanel } from "@/components/detection/OllamaSettingsPanel"
 import { selectBestMoments } from "@/lib/detection/best-moments";
 import { buildHighlightReel } from "@/lib/detection/highlight-reel";
 import { BatchExportPanel, type BatchQueueItem } from "@/components/clips/BatchExportPanel";
+import { runBatch, validateBatch } from "@/lib/batch-export";
 import { ClipEditDialog } from "@/components/clips/ClipEditDialog";
 import { clipToSrt, downloadText, segmentsInRange } from "@/lib/clip-export";
 import type { ClipCandidate } from "@/lib/detection/types";
@@ -212,8 +213,7 @@ function WorkspacePage() {
       : hasTranscript
         ? "TRANSCRIBED"
         : "NO_TRANSCRIPT";
-  const canAnalyze =
-    !!project.video && hasTranscript && !transcribing && !analyzing;
+  const canAnalyze = !!project.video && hasTranscript && !transcribing && !analyzing;
   const analyzeHint = !project.video
     ? "Add a video to this project first."
     : transcribing
@@ -293,7 +293,6 @@ function WorkspacePage() {
     { maxRecommendations: bestMomentsMax },
   );
 
-
   const exportHighlightReel = async () => {
     if (!file) {
       toast.error("Select the original video file before exporting.");
@@ -332,9 +331,10 @@ function WorkspacePage() {
         setRenderState((s) => {
           if (s.progress != null && s.progress >= 0.08) return s;
           return {
-            label: s.label.includes("Encoding") || s.label.includes("Rendering")
-              ? `Still encoding… (${tick * 5}s elapsed, keep tab open)`
-              : s.label,
+            label:
+              s.label.includes("Encoding") || s.label.includes("Rendering")
+                ? `Still encoding… (${tick * 5}s elapsed, keep tab open)`
+                : s.label,
             progress: Math.min(0.08, (tick / 40) * 0.08),
           };
         });
@@ -348,9 +348,7 @@ function WorkspacePage() {
       const last = reel.plan.segments[reel.plan.segments.length - 1]!;
 
       // Captions: collect words from each moment, rebase onto the stitched timeline.
-      const allWords = reel.moments.flatMap((m) =>
-        wordsInClip(segs, m.startSec, m.endSec),
-      );
+      const allWords = reel.moments.flatMap((m) => wordsInClip(segs, m.startSec, m.endSec));
       const rebased = rebaseWords(reel.plan, allWords);
       let captionAss: string | undefined;
       if (captionSettings.enabled && rebased.length) {
@@ -464,9 +462,7 @@ function WorkspacePage() {
           const latest = getProject(project.id);
           if (!latest) return;
           updateProject(project.id, {
-            clips: latest.clips.map((c) =>
-              c.id === clipId ? { ...c, thumbnailUrl: url } : c,
-            ),
+            clips: latest.clips.map((c) => (c.id === clipId ? { ...c, thumbnailUrl: url } : c)),
           });
         } catch (err) {
           console.warn("thumbnail refresh failed", err);
@@ -515,7 +511,11 @@ function WorkspacePage() {
       const name = clipFileName(project.name, current.index, current.startSec, current.endSec);
 
       setRenderState({ label: "Analyzing pauses...", progress: null });
-      const { plan, fillerCount, warnings: cleanupWarnings } = await buildCleanupPlan({
+      const {
+        plan,
+        fillerCount,
+        warnings: cleanupWarnings,
+      } = await buildCleanupPlan({
         file,
         segments,
         clipStart: current.startSec,
@@ -623,7 +623,6 @@ function WorkspacePage() {
     }
   };
 
-
   const toggleSelectClip = (clip: ClipCandidate) => {
     setSelectedClipIds((prev) => {
       const next = new Set(prev);
@@ -645,111 +644,56 @@ function WorkspacePage() {
       return;
     }
     const selected = project.clips.filter((c) => selectedClipIds.has(c.id));
-    if (!selected.length) {
-      toast.error("Select at least one clip.");
-      return;
-    }
-    if (selected.length > 12) {
-      toast.error("Browser limit: export at most 12 clips at a time.");
-      return;
-    }
     const file = getProjectFile(project.id);
-    if (!file) {
-      toast.error("Select the original video file again before exporting.");
+    const invalid = validateBatch(selected.length, !!file);
+    if (invalid || !file) {
+      toast.error(invalid ?? "Select the original video file again before exporting.");
       return;
     }
     batchCancelRemainingRef.current = false;
     setBatchRunning(true);
-    const queue: BatchQueueItem[] = selected.map((clip) => ({
-      clip,
-      status: "waiting",
-      progress: null,
-    }));
-    setBatchQueue(queue);
+    setBatchQueue(selected.map((clip) => ({ clip, status: "waiting", progress: null })));
 
-    let completed = 0;
-    let failed = 0;
-
-    for (let i = 0; i < queue.length; i++) {
-      if (batchCancelRemainingRef.current) {
-        setBatchQueue((q) =>
-          q.map((item, idx) =>
-            idx >= i && item.status === "waiting"
-              ? { ...item, status: "cancelled" }
-              : item,
+    let result = { completed: 0, failed: 0, cancelled: 0 };
+    try {
+      result = await runBatch({
+        items: selected,
+        shouldCancelRemaining: () => batchCancelRemainingRef.current,
+        onActive: (i, controller) => {
+          batchAbortRef.current = controller;
+          renderAbortRef.current = controller;
+          setRenderingClipId(i === null ? null : selected[i]!.id);
+          if (i === null) setRenderState({ label: "", progress: null });
+        },
+        onUpdate: (i, patch) =>
+          setBatchQueue((q) =>
+            q.map((item, idx) =>
+              idx !== i
+                ? item
+                : patch.status === "cancelled" &&
+                    item.status !== "waiting" &&
+                    item.status !== "rendering"
+                  ? item
+                  : { ...item, ...patch },
+            ),
           ),
-        );
-        break;
-      }
-      const clip = queue[i]!.clip;
-      const controller = new AbortController();
-      batchAbortRef.current = controller;
-      renderAbortRef.current = controller;
-      setRenderingClipId(clip.id);
-      setBatchQueue((q) =>
-        q.map((item, idx) =>
-          idx === i ? { ...item, status: "rendering", label: "Preparing…", progress: 0 } : item,
-        ),
-      );
-      try {
-        // Reuse single-clip export by calling exportVideo logic inline via dynamic import path
-        await exportVideoForBatch(clip, file, controller, (label, progress) => {
-          setRenderState({ label, progress });
-          setBatchQueue((q) =>
-            q.map((item, idx) =>
-              idx === i ? { ...item, status: "rendering", label, progress } : item,
-            ),
-          );
-        });
-        completed += 1;
-        setBatchQueue((q) =>
-          q.map((item, idx) =>
-            idx === i ? { ...item, status: "done", progress: 1, label: "Done" } : item,
-          ),
-        );
-      } catch (e) {
-        const err = e as { code?: string; message?: string };
-        if (err.code === "cancelled" || controller.signal.aborted) {
-          setBatchQueue((q) =>
-            q.map((item, idx) =>
-              idx === i ? { ...item, status: "cancelled", label: "Cancelled" } : item,
-            ),
-          );
-          if (batchCancelRemainingRef.current) {
-            setBatchQueue((q) =>
-              q.map((item, idx) =>
-                idx > i && item.status === "waiting"
-                  ? { ...item, status: "cancelled" }
-                  : item,
-              ),
-            );
-            break;
-          }
-        } else {
-          failed += 1;
-          setBatchQueue((q) =>
-            q.map((item, idx) =>
-              idx === i
-                ? {
-                    ...item,
-                    status: "failed",
-                    error: err.message ?? "Export failed",
-                    label: "Failed",
-                  }
-                : item,
-            ),
-          );
-        }
-      } finally {
-        batchAbortRef.current = null;
-        renderAbortRef.current = null;
-        setRenderingClipId(null);
-        setRenderState({ label: "", progress: null });
-      }
+        render: (clip, _i, controller, onProgress) =>
+          exportVideoForBatch(clip, file, controller, (label, progress) => {
+            setRenderState({ label, progress });
+            onProgress(label, progress);
+          }),
+      });
+    } finally {
+      batchAbortRef.current = null;
+      renderAbortRef.current = null;
+      setRenderingClipId(null);
+      setRenderState({ label: "", progress: null });
+      setBatchRunning(false);
     }
-
-    setBatchRunning(false);
-    toast.message(`Batch finished · ${completed} done · ${failed} failed`);
+    toast.message(
+      `Batch finished · ${result.completed} done · ${result.failed} failed` +
+        (result.cancelled ? ` · ${result.cancelled} cancelled` : ""),
+    );
   };
 
   /** Single-clip render used by batch (same pipeline as Export Short). */
@@ -804,12 +748,7 @@ function WorkspacePage() {
         const cues = buildCaptionCues(fakeSegs, 0, plan.outputDurationSec, captionSettings);
         captionAss = cues.length ? buildDynamicAss(cues, captionSettings) : undefined;
       } else {
-        const cues = buildCaptionCues(
-          segments,
-          current.startSec,
-          current.endSec,
-          captionSettings,
-        );
+        const cues = buildCaptionCues(segments, current.startSec, current.endSec, captionSettings);
         captionAss = cues.length ? buildDynamicAss(cues, captionSettings) : undefined;
       }
     }
@@ -855,7 +794,6 @@ function WorkspacePage() {
     renderAbortRef.current?.abort();
   };
 
-
   const runAnalysis = async () => {
     try {
       const { setRankingProvider } = await import("@/lib/detection/ranking-provider");
@@ -896,7 +834,7 @@ function WorkspacePage() {
           try {
             const { generateClipThumbnail } = await import("@/lib/video/thumbnail");
             const { trackSubject } = await import("@/lib/video/subject-tracker");
-            let clips = run.candidates;
+            const clips = run.candidates;
             for (const c of run.candidates) {
               try {
                 const reframe = await trackSubject(f, {
@@ -1119,14 +1057,11 @@ function WorkspacePage() {
             <h2 className="mb-4 font-display text-lg font-semibold">Potential clips</h2>
             {project.clips.length > 0 ? (
               <>
-              <div className="panel mb-3 p-4">
-                <AudioEnhancePanel settings={audioEnhance} onChange={updateAudioEnhance} />
-              </div>
-              <CaptionSettingsPanel settings={captionSettings} onChange={updateCaptionSettings} />
-                <CleanupSettingsPanel
-                  settings={cleanupSettings}
-                  onChange={updateCleanupSettings}
-                />
+                <div className="panel mb-3 p-4">
+                  <AudioEnhancePanel settings={audioEnhance} onChange={updateAudioEnhance} />
+                </div>
+                <CaptionSettingsPanel settings={captionSettings} onChange={updateCaptionSettings} />
+                <CleanupSettingsPanel settings={cleanupSettings} onChange={updateCleanupSettings} />
                 <BatchExportPanel
                   selectedCount={selectedClipIds.size}
                   queue={batchQueue}
@@ -1153,9 +1088,6 @@ function WorkspacePage() {
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
-
-                
-                
                 {renderingClipId ? (
                   <div className="mb-3 rounded-lg border border-border bg-muted/40 p-3 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1203,7 +1135,7 @@ function WorkspacePage() {
                   </div>
                 ) : null}
 
-<div className="mb-3 flex flex-wrap items-center gap-2">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
                     variant="secondary"
@@ -1211,7 +1143,7 @@ function WorkspacePage() {
                     onClick={() => void exportHighlightReel()}
                   >
                     {renderingClipId === "highlight-reel"
-                      ? (renderState.label || "Exporting highlight reel…")
+                      ? renderState.label || "Exporting highlight reel…"
                       : "Export full-video highlight reel"}
                   </Button>
                   <span className="text-xs text-muted-foreground">

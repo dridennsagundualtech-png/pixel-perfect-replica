@@ -338,7 +338,8 @@ export function clampWordTimings(words: TranscriptWord[]): TranscriptWord[] {
     const next = words[i + 1];
     let end = w.endSec;
     if (next && end > next.startSec) end = next.startSec;
-    if (end <= w.startSec) end = Math.min(w.startSec + 0.05, next ? next.startSec : w.startSec + 0.05);
+    if (end <= w.startSec)
+      end = Math.min(w.startSec + 0.05, next ? next.startSec : w.startSec + 0.05);
     out.push({ text: w.text, startSec: w.startSec, endSec: end });
   }
   return out;

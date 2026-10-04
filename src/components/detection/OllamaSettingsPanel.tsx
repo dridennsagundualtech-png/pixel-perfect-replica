@@ -89,9 +89,9 @@ export function OllamaSettingsPanel() {
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        First time: install Ollama → run <code className="text-foreground">ollama pull llama3.2</code> →
-        allow browser: set env <code className="text-foreground">OLLAMA_ORIGINS=*</code> then restart
-        Ollama.
+        First time: install Ollama → run{" "}
+        <code className="text-foreground">ollama pull llama3.2</code> → allow browser: set env{" "}
+        <code className="text-foreground">OLLAMA_ORIGINS=*</code> then restart Ollama.
       </p>
     </div>
   );

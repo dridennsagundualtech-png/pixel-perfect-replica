@@ -46,12 +46,7 @@ import type {
  */
 
 export type DetectionRunStatus =
-  | "ok"
-  | "no-transcript"
-  | "empty-transcript"
-  | "invalid-rules"
-  | "no-candidates"
-  | "all-rejected";
+  "ok" | "no-transcript" | "empty-transcript" | "invalid-rules" | "no-candidates" | "all-rejected";
 
 export interface DetectionOptions {
   mode?: DetectionMode | undefined;
@@ -211,7 +206,12 @@ export async function runDetection(
   options: DetectionOptions = {},
 ): Promise<DetectionRunResult> {
   const mode = options.mode ?? "rules";
-  const base = { mode, candidates: [] as ClipCandidate[], analyzed: [] as AnalyzedCandidate[], topFailures: [] as DetectionRunResult["topFailures"] };
+  const base = {
+    mode,
+    candidates: [] as ClipCandidate[],
+    analyzed: [] as AnalyzedCandidate[],
+    topFailures: [] as DetectionRunResult["topFailures"],
+  };
 
   if (!transcript) {
     return {
@@ -251,10 +251,7 @@ export async function runDetection(
   if (mode === "ai" && options.ai) {
     const aiB = {
       minDurationSec: Math.max(1, options.ai.minDurationSec || bounds.minDurationSec),
-      maxDurationSec: Math.max(
-        2,
-        options.ai.maxDurationSec || bounds.maxDurationSec,
-      ),
+      maxDurationSec: Math.max(2, options.ai.maxDurationSec || bounds.maxDurationSec),
     };
     if (aiB.minDurationSec > aiB.maxDurationSec) {
       aiB.maxDurationSec = aiB.minDurationSec + 15;
@@ -481,8 +478,7 @@ export async function runDetection(
     );
   });
 
-  const modeLabel =
-    mode === "ai" ? "AI" : mode === "hybrid" ? "Hybrid" : "Rules";
+  const modeLabel = mode === "ai" ? "AI" : mode === "hybrid" ? "Hybrid" : "Rules";
 
   return {
     mode,

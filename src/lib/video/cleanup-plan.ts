@@ -3,11 +3,7 @@
  */
 
 import type { TranscriptSegment } from "@/lib/detection/transcript";
-import {
-  buildEditPlan,
-  type EditPlan,
-  type RemovalRange,
-} from "./edit-timeline";
+import { buildEditPlan, type EditPlan, type RemovalRange } from "./edit-timeline";
 import type { CleanupSettings } from "./cleanup-settings";
 import { detectFillerRemovals } from "./filler-detect";
 import { detectSilenceRemovals } from "./silence-detect";
@@ -59,12 +55,7 @@ export async function buildCleanupPlan(opts: {
     }
 
     if (settings.removeFillers) {
-      const fill = detectFillerRemovals(
-        segments,
-        clipStart,
-        clipEnd,
-        settings.fillerWords,
-      );
+      const fill = detectFillerRemovals(segments, clipStart, clipEnd, settings.fillerWords);
       fillerCount = fill.count;
       removals.push(...fill.removals);
     }

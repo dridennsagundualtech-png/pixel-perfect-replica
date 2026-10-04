@@ -77,10 +77,7 @@ export function selectBestMoments(
       rank: i + 1,
       engagementPotential: Math.round(engagementOf(clip)),
       ruleScore: Math.round(clip.score ?? 0),
-      durationSec: Math.max(
-        0,
-        clip.durationSec ?? (clip.endSec ?? 0) - (clip.startSec ?? 0),
-      ),
+      durationSec: Math.max(0, clip.durationSec ?? (clip.endSec ?? 0) - (clip.startSec ?? 0)),
       transcript,
       hook,
       reasons: reasonsFrom(clip),

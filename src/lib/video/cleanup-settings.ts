@@ -19,16 +19,7 @@ export interface CleanupSettings {
   fillerWords: string[];
 }
 
-export const DEFAULT_FILLER_WORDS = [
-  "um",
-  "uh",
-  "er",
-  "ah",
-  "uhm",
-  "hmm",
-  "like",
-  "you know",
-];
+export const DEFAULT_FILLER_WORDS = ["um", "uh", "er", "ah", "uhm", "hmm", "like", "you know"];
 
 export const DEFAULT_CLEANUP_SETTINGS: CleanupSettings = {
   removeDeadAir: false,

@@ -100,7 +100,7 @@ Candidates:
 ${body}`;
 }
 
-function parseResponse(raw: string, fallback: RankedCandidate[]): RankedCandidate[] {
+export function parseResponse(raw: string, fallback: RankedCandidate[]): RankedCandidate[] {
   const start = raw.indexOf("[");
   const end = raw.lastIndexOf("]");
   if (start < 0 || end <= start) return fallback;
@@ -124,11 +124,19 @@ function parseResponse(raw: string, fallback: RankedCandidate[]): RankedCandidat
         }
       }
       const explanations = Array.isArray(row.explanations)
-        ? row.explanations.map((e) => String(e).slice(0, 80)).filter(Boolean).slice(0, 5)
+        ? row.explanations
+            .map((e) => String(e).slice(0, 80))
+            .filter(Boolean)
+            .slice(0, 5)
         : prev.explanations;
       byId.set(row.id, {
         id: row.id,
-        engagementPotential: clamp100(Number(row.engagementPotential) || prev.engagementPotential),
+        engagementPotential:
+          Number.isFinite(Number(row.engagementPotential)) &&
+          row.engagementPotential !== null &&
+          row.engagementPotential !== undefined
+            ? clamp100(Number(row.engagementPotential))
+            : prev.engagementPotential,
         factorScores,
         explanations,
       });
@@ -183,8 +191,7 @@ export async function probeOllama(
     if (!res.ok) return { ok: false, message: `Ollama returned ${res.status}`, models: [] };
     const data = (await res.json()) as { models?: { name: string }[] };
     const models = (data.models ?? []).map((m) => m.name);
-    const has =
-      models.some((n) => n === model || n.startsWith(`${model}:`) || n.startsWith(model));
+    const has = models.some((n) => n === model || n.startsWith(`${model}:`) || n.startsWith(model));
     if (!models.length)
       return {
         ok: false,
@@ -208,7 +215,9 @@ export async function probeOllama(
   }
 }
 
-export function createOllamaRankingProvider(opts?: Partial<OllamaRankingOptions>): ClipRankingProvider {
+export function createOllamaRankingProvider(
+  opts?: Partial<OllamaRankingOptions>,
+): ClipRankingProvider {
   const model = opts?.model || loadOllamaSettings().model;
   const baseUrl = (opts?.baseUrl || loadOllamaSettings().baseUrl).replace(/\/$/, "");
   const maxCandidates = opts?.maxCandidates ?? 12;

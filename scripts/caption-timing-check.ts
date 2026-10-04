@@ -83,7 +83,13 @@ function run() {
     endSec: 1 + i * 0.25 + 0.2,
   }));
   const segs4: TranscriptSegment[] = [
-    { id: "4", startSec: 0, endSec: 20, text: longWords.map((w) => w.text).join(" "), words: longWords },
+    {
+      id: "4",
+      startSec: 0,
+      endSec: 20,
+      text: longWords.map((w) => w.text).join(" "),
+      words: longWords,
+    },
   ];
   const cues4 = buildCaptionCues(segs4, 0, 20, { ...settings, maxWords: 4 });
   const groups4 = new Set(cues4.map((c) => c.group));
@@ -96,7 +102,10 @@ function run() {
 
   // clip starts mid-segment
   const cuesMid = buildCaptionCues(segs1, 1.2, 5, settings);
-  assert(cuesMid.every((c) => c.startSec >= 0), "clip-relative starts >= 0");
+  assert(
+    cuesMid.every((c) => c.startSec >= 0),
+    "clip-relative starts >= 0",
+  );
   assert(
     cuesMid.every((c) => c.endSec <= 5 - 1.2 + 0.001),
     "clip-relative ends within duration",

@@ -58,8 +58,8 @@ export function AudioEnhancePanel({
         </Select>
       </div>
       <p className="text-xs text-muted-foreground">
-        Prioritizes natural speech. Preview uses the original audio; enhancement is on the final
-        MP4 only (keeps the browser stable).
+        Prioritizes natural speech. Preview uses the original audio; enhancement is on the final MP4
+        only (keeps the browser stable).
       </p>
     </div>
   );

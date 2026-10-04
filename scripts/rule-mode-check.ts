@@ -39,11 +39,11 @@ const rules = createDefaultRules();
 const only = (segments: TranscriptSegment[]) =>
   runDetection({ segments }, rules, { mode: "rules", now: () => "1970-01-01T00:00:00.000Z" });
 
-const a = only(plain);
+const a = await only(plain);
 const plainBest = a.candidates[0];
 check("plain clip without quality signals is NOT rejected", !!plainBest, a.message);
 
-const b = only(rich);
+const b = await only(rich);
 const richBest = b.candidates[0];
 check("clip with quality signals passes", !!richBest, b.message);
 check(
@@ -56,7 +56,7 @@ check(
 const silent = plain.map((s, i) =>
   i >= 3 ? { ...s, startSec: s.startSec + 5, endSec: s.endSec + 5 } : s,
 );
-const c = only(silent);
+const c = await only(silent);
 check(
   "clip with 5s silence is rejected",
   !c.candidates.some((x) => x.startSec <= 12 && x.endSec >= 23),
@@ -64,10 +64,10 @@ check(
 );
 
 // Too short: only 12s of speech.
-const d = only(plain.slice(0, 2));
+const d = await only(plain.slice(0, 2));
 check("12s clip is rejected (min 20s)", d.candidates.length === 0, d.message);
 
-const again = JSON.stringify(only(rich).candidates);
+const again = JSON.stringify((await only(rich)).candidates);
 check("deterministic", again === JSON.stringify(b.candidates));
 
 process.exit(failures ? 1 : 0);

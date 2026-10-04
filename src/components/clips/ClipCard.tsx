@@ -54,11 +54,7 @@ export function ClipCard({
       </div>
       <div className="relative mx-auto aspect-[9/16] max-h-56 w-full max-w-[140px] overflow-hidden bg-muted/60 sm:max-h-64 sm:max-w-[160px]">
         {clip.thumbnailUrl ? (
-          <img
-            src={clip.thumbnailUrl}
-            alt=""
-            className="size-full object-cover"
-          />
+          <img src={clip.thumbnailUrl} alt="" className="size-full object-cover" />
         ) : (
           <div className="flex size-full flex-col items-center justify-center gap-1 p-2 text-center text-[11px] text-muted-foreground">
             {thumbnailPending ? (
