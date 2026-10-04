@@ -147,7 +147,7 @@ export function parseResponse(raw: string, fallback: RankedCandidate[]): RankedC
   }
 }
 
-async function ollamaGenerate(
+export async function ollamaGenerate(
   baseUrl: string,
   model: string,
   prompt: string,
