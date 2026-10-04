@@ -5,12 +5,6 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { ClipCard } from "@/components/clips/ClipCard";
 import { BestMomentsPanel } from "@/components/clips/BestMomentsPanel";
-import { AudioEnhancePanel } from "@/components/clips/AudioEnhancePanel";
-import {
-  loadAudioEnhanceSettings,
-  saveAudioEnhanceSettings,
-  type AudioEnhanceSettings,
-} from "@/lib/video/audio-enhance";
 import { OllamaSettingsPanel } from "@/components/detection/OllamaSettingsPanel";
 import { selectBestMoments } from "@/lib/detection/best-moments";
 import { buildHighlightReel } from "@/lib/detection/highlight-reel";
@@ -119,11 +113,6 @@ function WorkspacePage() {
   });
   const renderAbortRef = useRef<AbortController | null>(null);
   const [captionSettings, updateCaptionSettings] = useCaptionSettings();
-  const [audioEnhance, setAudioEnhance] = useState<AudioEnhanceSettings>(() =>
-    loadAudioEnhanceSettings(),
-  );
-  const updateAudioEnhance = (patch: Partial<AudioEnhanceSettings>) =>
-    setAudioEnhance(saveAudioEnhanceSettings(patch));
   const [cleanupSettings, updateCleanupSettings] = useCleanupSettings();
   useEffect(() => () => renderAbortRef.current?.abort(), []);
 
@@ -575,7 +564,6 @@ function WorkspacePage() {
         reframe,
         editPlan: plan.isIdentity ? undefined : plan,
         captionAss,
-        audioEnhance,
         onProgress: (p) =>
           setRenderState(
             p.stage === "loading"
@@ -817,7 +805,6 @@ function WorkspacePage() {
       reframe,
       editPlan: plan.isIdentity ? undefined : plan,
       captionAss,
-      audioEnhance,
       onProgress: (p) =>
         onProg(
           p.stage === "loading"
@@ -1109,9 +1096,6 @@ function WorkspacePage() {
             <h2 className="mb-4 font-display text-lg font-semibold">Potential clips</h2>
             {project.clips.length > 0 ? (
               <>
-                <div className="panel p-4 mb-3">
-                <AudioEnhancePanel settings={audioEnhance} onChange={updateAudioEnhance} />
-              </div>
               <CaptionSettingsPanel settings={captionSettings} onChange={updateCaptionSettings} />
                 <CleanupSettingsPanel
                   settings={cleanupSettings}
@@ -1234,7 +1218,6 @@ function WorkspacePage() {
                     render={renderingClipId === clip.id ? renderState : undefined}
                     renderDisabled={renderingClipId !== null && renderingClipId !== clip.id}
                     captionsEnabled={captionSettings.enabled}
-        captionSettings={captionSettings}
                     thumbnailPending={!clip.thumbnailUrl && !!file}
                     selected={selectedClipIds.has(clip.id)}
                     onToggleSelect={toggleSelectClip}
