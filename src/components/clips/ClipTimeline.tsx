@@ -28,7 +28,12 @@ export function ClipTimeline({
   onSeek,
   onChangeRange,
   className,
+  viewStartSec,
+  viewEndSec,
 }: {
+  /** Optional zoom window (defaults to 0..durationSec). */
+  viewStartSec?: number;
+  viewEndSec?: number;
   /** Full source duration (or clip window max). */
   durationSec: number;
   startSec: number;
@@ -43,6 +48,9 @@ export function ClipTimeline({
   const barRef = useRef<HTMLDivElement>(null);
   const drag = useRef<"playhead" | "start" | "end" | null>(null);
   const dur = Math.max(0.1, durationSec);
+  const v0 = Math.max(0, viewStartSec ?? 0);
+  const v1 = Math.min(dur, viewEndSec ?? dur);
+  const span = Math.max(0.1, v1 - v0);
 
   const secFromClientX = useCallback(
     (clientX: number) => {
@@ -50,9 +58,9 @@ export function ClipTimeline({
       if (!bar) return 0;
       const rect = bar.getBoundingClientRect();
       const u = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(1, rect.width)));
-      return Math.round(u * dur * 100) / 100;
+      return Math.round((v0 + u * span) * 100) / 100;
     },
-    [dur],
+    [v0, span],
   );
 
   useEffect(() => {
@@ -79,28 +87,29 @@ export function ClipTimeline({
     };
   }, [secFromClientX, startSec, endSec, dur, onSeek, onChangeRange]);
 
-  const pct = (sec: number) => `${(sec / dur) * 100}%`;
+  const pct = (sec: number) => `${Math.min(100, Math.max(0, ((sec - v0) / span) * 100))}%`;
+  const wpct = (len: number) => `${Math.max(0, (len / span) * 100)}%`;
 
   return (
     <div className={cn("space-y-1.5", className)}>
       <div className="flex justify-between text-[11px] text-muted-foreground">
-        <span>{formatTimecode(0)}</span>
+        <span>{formatTimecode(v0)}</span>
         <span>
           Clip {formatTimecode(startSec)} – {formatTimecode(endSec)}
         </span>
-        <span>{formatTimecode(dur)}</span>
+        <span>{formatTimecode(v1)}</span>
       </div>
 
       {/* Caption track */}
-      <div className="relative h-3 rounded bg-muted/60">
+      <div className="relative h-3 overflow-hidden rounded bg-muted/60">
         {(captions ?? []).map((c, i) => (
           <div
             key={i}
             title={c.label}
-            className="absolute top-0.5 h-2 rounded-sm bg-accent/70"
+            className={cn("absolute top-0.5 h-2 rounded-sm", playheadSec >= c.startSec && playheadSec < c.endSec ? "bg-accent" : "bg-accent/45")}
             style={{
               left: pct(c.startSec),
-              width: pct(Math.max(0.05, c.endSec - c.startSec)),
+              width: wpct(Math.max(0.05, Math.min(c.endSec, v1) - Math.max(c.startSec, v0))),
             }}
           />
         ))}
@@ -128,7 +137,7 @@ export function ClipTimeline({
             )}
             style={{
               left: pct(r.startSec),
-              width: pct(Math.max(0.05, r.endSec - r.startSec)),
+              width: wpct(Math.max(0.05, Math.min(r.endSec, v1) - Math.max(r.startSec, v0))),
             }}
           />
         ))}
@@ -138,7 +147,7 @@ export function ClipTimeline({
           className="absolute inset-y-0 bg-primary/30"
           style={{
             left: pct(startSec),
-            width: pct(Math.max(0.05, endSec - startSec)),
+            width: wpct(Math.max(0.05, endSec - startSec)),
           }}
         />
 
