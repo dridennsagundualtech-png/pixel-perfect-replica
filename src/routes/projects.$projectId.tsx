@@ -9,6 +9,7 @@ import { OllamaSettingsPanel } from "@/components/detection/OllamaSettingsPanel"
 import { selectBestMoments } from "@/lib/detection/best-moments";
 import { buildHighlightReel } from "@/lib/detection/highlight-reel";
 import { BatchExportPanel, type BatchQueueItem } from "@/components/clips/BatchExportPanel";
+import { runBatch, validateBatch } from "@/lib/batch-export";
 import { ClipEditDialog } from "@/components/clips/ClipEditDialog";
 import { clipToSrt, downloadText, segmentsInRange } from "@/lib/clip-export";
 import type { ClipCandidate } from "@/lib/detection/types";
