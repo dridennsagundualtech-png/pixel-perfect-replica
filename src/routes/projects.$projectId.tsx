@@ -26,6 +26,13 @@ import {
   type AudioEnhanceSettings,
 } from "@/lib/video/audio-enhance";
 import { useExportExtras } from "@/lib/video/export-extras";
+import {
+  FORMAT_META,
+  getOutputSize,
+  manualReframeX,
+  useOutputSettings,
+} from "@/lib/video/output-format";
+import { CreatorPresetsPanel } from "@/components/clips/CreatorPresetsPanel";
 import { CleanupSettingsPanel } from "@/components/clips/CleanupSettingsPanel";
 import { AiSettingsPanel } from "@/components/detection/AiSettingsPanel";
 import { DetectionModeSelector } from "@/components/detection/DetectionModeSelector";
@@ -128,6 +135,9 @@ function WorkspacePage() {
   const updateAudioEnhance = (patch: Partial<AudioEnhanceSettings>) =>
     setAudioEnhance(saveAudioEnhanceSettings(patch));
   const exportExtras = useExportExtras();
+  const [outputSettings, updateOutputSettings] = useOutputSettings();
+  const outputSize = getOutputSize(outputSettings.format, outputSettings.resolution);
+  const renderFormat = () => ({ outputSize, manualX: manualReframeX(outputSettings) });
   useEffect(() => () => renderAbortRef.current?.abort(), []);
 
   const seek = useCallback((sec: number) => {
@@ -362,7 +372,7 @@ function WorkspacePage() {
           },
         ];
         const cues = buildCaptionCues(fakeSegs, 0, reel.plan.outputDurationSec, captionSettings);
-        captionAss = cues.length ? buildDynamicAss(cues, captionSettings) : undefined;
+        captionAss = cues.length ? buildDynamicAss(cues, captionSettings, outputSize) : undefined;
       }
 
       setRenderState({ label: "Rendering highlight reel (encoding)…", progress: 0 });
@@ -376,6 +386,7 @@ function WorkspacePage() {
         outputName: name,
         signal: controller.signal,
         vertical: true,
+        ...renderFormat(),
         // Center crop only — smart reframe + multi-cut is too heavy in-browser.
         reframe: { source: "center", points: [{ timeSec: 0, x: 0.5, confidence: 0 }] },
         editPlan: reel.plan,
@@ -422,7 +433,13 @@ function WorkspacePage() {
     });
   };
 
-  const saveClip = (changes: { title: string; startSec: number; endSec: number }) => {
+  const saveClip = (changes: {
+    title: string;
+    startSec: number;
+    endSec: number;
+    description?: string | undefined;
+    hashtags?: string | undefined;
+  }) => {
     if (!editing) return;
     const inside = segmentsInRange(segments, changes.startSec, changes.endSec);
     updateProject(project.id, {
@@ -440,35 +457,40 @@ function WorkspacePage() {
     });
     setEditing(null);
     toast.success("Clip updated");
+    refreshThumbnail(editing.id, changes.startSec, changes.endSec);
+  };
+
+  const setClipThumbnail = (clipId: string, url: string) => {
+    void import("@/lib/projects").then(({ getProject }) => {
+      const latest = getProject(project.id);
+      if (!latest) return;
+      updateProject(project.id, {
+        clips: latest.clips.map((c) => (c.id === clipId ? { ...c, thumbnailUrl: url } : c)),
+      });
+    });
+  };
+
+  /** Re-run the existing automatic thumbnail picker for one clip. */
+  const refreshThumbnail = (clipId: string, startSec: number, endSec: number, notify = false) => {
     const f = getProjectFile(project.id);
-    const clipId = editing.id;
-    if (f) {
-      void (async () => {
-        try {
-          const { generateClipThumbnail } = await import("@/lib/video/thumbnail");
-          const { trackSubject } = await import("@/lib/video/subject-tracker");
-          const { getProject } = await import("@/lib/projects");
-          const reframe = await trackSubject(f, {
-            startSec: changes.startSec,
-            endSec: changes.endSec,
-            sampleIntervalSec: 0.8,
-          });
-          const url = await generateClipThumbnail(f, {
-            startSec: changes.startSec,
-            endSec: changes.endSec,
-            reframe,
-          });
-          if (!url) return;
-          const latest = getProject(project.id);
-          if (!latest) return;
-          updateProject(project.id, {
-            clips: latest.clips.map((c) => (c.id === clipId ? { ...c, thumbnailUrl: url } : c)),
-          });
-        } catch (err) {
-          console.warn("thumbnail refresh failed", err);
-        }
-      })();
+    if (!f) {
+      if (notify) toast.error("Select the original video file first.");
+      return;
     }
+    void (async () => {
+      try {
+        const { generateClipThumbnail } = await import("@/lib/video/thumbnail");
+        const { trackSubject } = await import("@/lib/video/subject-tracker");
+        const reframe = await trackSubject(f, { startSec, endSec, sampleIntervalSec: 0.8 });
+        const url = await generateClipThumbnail(f, { startSec, endSec, reframe });
+        if (!url) throw new Error("no frame");
+        setClipThumbnail(clipId, url);
+        if (notify) toast.success("Thumbnail regenerated");
+      } catch (err) {
+        console.warn("thumbnail refresh failed", err);
+        if (notify) toast.error("Thumbnail generation failed. You can choose a frame manually.");
+      }
+    })();
   };
 
   const exportClip = (clip: ClipCandidate) => {
@@ -557,7 +579,7 @@ function WorkspacePage() {
               ]
             : [];
           const cues = buildCaptionCues(fakeSegs, 0, plan.outputDurationSec, captionSettings);
-          captionAss = cues.length ? buildDynamicAss(cues, captionSettings) : undefined;
+          captionAss = cues.length ? buildDynamicAss(cues, captionSettings, outputSize) : undefined;
         } else {
           const cues = buildCaptionCues(
             segments,
@@ -565,7 +587,7 @@ function WorkspacePage() {
             current.endSec,
             captionSettings,
           );
-          captionAss = cues.length ? buildDynamicAss(cues, captionSettings) : undefined;
+          captionAss = cues.length ? buildDynamicAss(cues, captionSettings, outputSize) : undefined;
         }
       }
 
@@ -577,6 +599,7 @@ function WorkspacePage() {
         outputName: name,
         signal: controller.signal,
         vertical: true,
+        ...renderFormat(),
         reframe,
         editPlan: plan.isIdentity ? undefined : plan,
         captionAss,
@@ -590,7 +613,7 @@ function WorkspacePage() {
               : p.stage === "finalizing"
                 ? { label: "Finalizing MP4...", progress: 1 }
                 : {
-                    label: `Rendering 9:16 short... ${Math.round((p.progress ?? 0) * 100)}%`,
+                    label: `Rendering ${FORMAT_META[outputSettings.format].ratio} clip... ${Math.round((p.progress ?? 0) * 100)}%`,
                     progress: p.progress ?? 0,
                   },
           ),
@@ -746,10 +769,10 @@ function WorkspacePage() {
             ]
           : [];
         const cues = buildCaptionCues(fakeSegs, 0, plan.outputDurationSec, captionSettings);
-        captionAss = cues.length ? buildDynamicAss(cues, captionSettings) : undefined;
+        captionAss = cues.length ? buildDynamicAss(cues, captionSettings, outputSize) : undefined;
       } else {
         const cues = buildCaptionCues(segments, current.startSec, current.endSec, captionSettings);
-        captionAss = cues.length ? buildDynamicAss(cues, captionSettings) : undefined;
+        captionAss = cues.length ? buildDynamicAss(cues, captionSettings, outputSize) : undefined;
       }
     }
 
@@ -761,6 +784,7 @@ function WorkspacePage() {
       outputName: name,
       signal: controller.signal,
       vertical: true,
+        ...renderFormat(),
       reframe,
       editPlan: plan.isIdentity ? undefined : plan,
       captionAss,
@@ -1057,6 +1081,20 @@ function WorkspacePage() {
             <h2 className="mb-4 font-display text-lg font-semibold">Potential clips</h2>
             {project.clips.length > 0 ? (
               <>
+                <CreatorPresetsPanel
+                  output={outputSettings}
+                  onOutputChange={updateOutputSettings}
+                  captionSettings={captionSettings}
+                  onCaptionChange={updateCaptionSettings}
+                  audioEnhance={audioEnhance}
+                  onAudioChange={updateAudioEnhance}
+                  musicOn={!!exportExtras.music}
+                  musicVolume={exportExtras.music?.volume ?? 0.2}
+                  onMusicVolume={(v) =>
+                    exportExtras.music && exportExtras.setMusic({ ...exportExtras.music, volume: v })
+                  }
+                  step={editing ? 3 : renderingClipId ? 4 : 1}
+                />
                 <div className="panel mb-3 p-4">
                   <AudioEnhancePanel settings={audioEnhance} onChange={updateAudioEnhance} />
                 </div>
@@ -1198,6 +1236,10 @@ function WorkspacePage() {
               onFlipChange={exportExtras.setFlip}
               music={exportExtras.music}
               onMusicChange={exportExtras.setMusic}
+              outputSettings={outputSettings}
+              onOutputSettingsChange={updateOutputSettings}
+              onThumbnail={(url) => editing && setClipThumbnail(editing.id, url)}
+              onRegenerateThumbnail={(s0, e0) => editing && refreshThumbnail(editing.id, s0, e0, true)}
               onClose={() => setEditing(null)}
               onSave={saveClip}
               onExport={(c) => void exportVideo(c)}

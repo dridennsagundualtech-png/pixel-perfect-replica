@@ -130,6 +130,9 @@ export interface ClipCandidate {
   metrics?: ClipMetricsSummary | undefined;
   status: "candidate" | "kept" | "rejected";
   thumbnailUrl?: string | undefined;
+  /** User-editable suggested description / hashtags (suggestions only). */
+  description?: string | undefined;
+  hashtags?: string | undefined;
   createdAt?: string | undefined;
 }
 

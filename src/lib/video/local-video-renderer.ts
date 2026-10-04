@@ -54,9 +54,14 @@ export interface VideoRenderRequest {
   audioEnhance?: AudioEnhanceSettings | undefined;
   /** Background music mixed under the voice (looped, faded out). */
   music?: { file: File; volume: number } | null | undefined;
+  /** Output frame for the formatted (vertical=true) path. Default 720×1280. */
+  outputSize?: { width: number; height: number } | undefined;
+  /** Manual horizontal framing 0–1; overrides the automatic track when set. */
+  manualX?: number | null | undefined;
 }
 
 let flipActive = false;
+let outSize = { width: SHORT_WIDTH, height: SHORT_HEIGHT };
 
 const FONT_URLS = [
   CAPTION_FONT_URL,
@@ -184,7 +189,8 @@ function buildVerticalBaseFilter(reframe?: ReframeTrack): string {
   const cropX = buildCropXExpression(
     reframe ?? { source: "center", points: [{ timeSec: 0, x: 0.5, confidence: 0 }] },
   );
-  return `scale=${SHORT_WIDTH}:${SHORT_HEIGHT}:force_original_aspect_ratio=increase,crop=${SHORT_WIDTH}:${SHORT_HEIGHT}:${cropX}:0,setsar=1${flipActive ? ",hflip" : ""}`;
+  const { width: W, height: H } = outSize;
+  return `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}:${cropX}:0,setsar=1${flipActive ? ",hflip" : ""}`;
 }
 
 function usesCuts(plan?: EditPlan): boolean {
@@ -236,13 +242,30 @@ export async function renderClip(req: VideoRenderRequest): Promise<VideoRenderRe
 
   busy = true;
   flipActive = !!req.flip;
+  outSize = req.outputSize ?? { width: SHORT_WIDTH, height: SHORT_HEIGHT };
+  if (req.manualX != null && Number.isFinite(req.manualX)) {
+    const x = Math.min(1, Math.max(0, req.manualX));
+    // Manual override only replaces the final framing; tracking itself is untouched.
+    req = {
+      ...req,
+      reframe:
+        Math.abs(x - 0.5) < 1e-6
+          ? { source: "center", points: [{ timeSec: 0, x: 0.5, confidence: 0 }] }
+          : { source: "person", points: [{ timeSec: 0, x, confidence: 1 }] },
+    };
+  }
   let ff: FFmpeg | undefined;
   const dir = `/src${Date.now()}`;
   let mounted = false;
   const logTail: string[] = [];
   const onAbort = () => reset(ff);
   const cut = usesCuts(req.editPlan);
-  const cutTrack = cut ? rebaseReframeTrack(req.reframe, req.editPlan!, range.startSec) : undefined;
+  const manualOn = req.manualX != null && Number.isFinite(req.manualX);
+  const cutTrack = cut
+    ? manualOn
+      ? req.reframe
+      : rebaseReframeTrack(req.reframe, req.editPlan!, range.startSec)
+    : undefined;
   const smart = cut ? isSmartReframe(cutTrack) : isSmartReframe(req.reframe);
   const outDur = cut ? req.editPlan!.outputDurationSec : range.durationSec;
 
