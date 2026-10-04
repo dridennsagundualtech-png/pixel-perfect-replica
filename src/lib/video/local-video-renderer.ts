@@ -14,6 +14,7 @@ import {
   type ReframeTrack,
 } from "./reframe-track";
 import type { EditPlan } from "./edit-timeline";
+import { buildAudioEnhanceFilter, type AudioEnhanceSettings } from "./audio-enhance";
 
 /**
  * Local clip renderer: original video File + start/end → a real MP4.
@@ -107,6 +108,7 @@ export interface VideoRenderResult {
   smartReframe?: boolean | undefined;
   cleanupApplied?: boolean | undefined;
   cleanupWarning?: string | undefined;
+  audioWarning?: string | undefined;
 }
 
 export class RenderError extends Error {
