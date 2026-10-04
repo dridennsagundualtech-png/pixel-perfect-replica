@@ -14,6 +14,7 @@ import {
   type ReframeTrack,
 } from "./reframe-track";
 import type { EditPlan } from "./edit-timeline";
+import { buildAudioEnhanceFilter, type AudioEnhanceSettings } from "./audio-enhance";
 
 /**
  * Local clip renderer: original video File + start/end → a real MP4.
@@ -47,7 +48,15 @@ export interface VideoRenderRequest {
   captionAss?: string | undefined;
   /** Absolute source keep-list. Identity / missing → continuous path. */
   editPlan?: EditPlan | undefined;
+  /** Mirror the video horizontally (before captions, so text stays readable). */
+  flip?: boolean | undefined;
+  /** Export-only voice enhancement. */
+  audioEnhance?: AudioEnhanceSettings | undefined;
+  /** Background music mixed under the voice (looped, faded out). */
+  music?: { file: File; volume: number } | null | undefined;
 }
+
+let flipActive = false;
 
 const FONT_URLS = [
   CAPTION_FONT_URL,
@@ -99,6 +108,7 @@ export interface VideoRenderResult {
   smartReframe?: boolean | undefined;
   cleanupApplied?: boolean | undefined;
   cleanupWarning?: string | undefined;
+  audioWarning?: string | undefined;
 }
 
 export class RenderError extends Error {
@@ -174,7 +184,7 @@ function buildVerticalBaseFilter(reframe?: ReframeTrack): string {
   const cropX = buildCropXExpression(
     reframe ?? { source: "center", points: [{ timeSec: 0, x: 0.5, confidence: 0 }] },
   );
-  return `scale=${SHORT_WIDTH}:${SHORT_HEIGHT}:force_original_aspect_ratio=increase,crop=${SHORT_WIDTH}:${SHORT_HEIGHT}:${cropX}:0,setsar=1`;
+  return `scale=${SHORT_WIDTH}:${SHORT_HEIGHT}:force_original_aspect_ratio=increase,crop=${SHORT_WIDTH}:${SHORT_HEIGHT}:${cropX}:0,setsar=1${flipActive ? ",hflip" : ""}`;
 }
 
 function usesCuts(plan?: EditPlan): boolean {
@@ -225,6 +235,7 @@ export async function renderClip(req: VideoRenderRequest): Promise<VideoRenderRe
   if (req.signal?.aborted) throw new RenderError("Export cancelled.", "cancelled");
 
   busy = true;
+  flipActive = !!req.flip;
   let ff: FFmpeg | undefined;
   const dir = `/src${Date.now()}`;
   let mounted = false;
@@ -420,8 +431,60 @@ export async function renderClip(req: VideoRenderRequest): Promise<VideoRenderRe
     }
 
     await ff.deleteFile("/captions.ass").catch(() => undefined);
-    ff.off("log", onLog);
     if (req.signal?.aborted) throw new RenderError("Export cancelled.", "cancelled");
+
+    // Flip without vertical (no base filter) — apply in the post pass.
+    const flipPost = !!req.flip && !req.vertical;
+    const enhance = buildAudioEnhanceFilter(req.audioEnhance);
+    let audioWarning: string | undefined;
+    if (code === 0 && (enhance || req.music || flipPost)) {
+      req.onProgress?.({ stage: "processing", progress: 0 });
+      let musicPath: string | null = null;
+      if (req.music) {
+        musicPath = `/music_${req.music.file.name.replace(/[^\w.]/g, "_")}`;
+        await ff.writeFile(musicPath, new Uint8Array(await req.music.file.arrayBuffer()));
+      }
+      const vol = Math.min(1, Math.max(0, req.music?.volume ?? 0.2));
+      const fadeSt = Math.max(0, outDur - 1.5);
+      const voice = `[0:a]${enhance || "anull"}[voice]`;
+      const fc = musicPath
+        ? `${voice};[1:a]volume=${vol},afade=t=out:st=${fadeSt}:d=1.5[bg];[voice][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`
+        : `${voice.replace("[voice]", "[aout]")}`;
+      const post = await ff.exec([
+        "-i",
+        "out.mp4",
+        ...(musicPath ? ["-stream_loop", "-1", "-i", musicPath] : []),
+        "-filter_complex",
+        flipPost ? `[0:v]hflip[vout];${fc}` : fc,
+        "-map",
+        flipPost ? "[vout]" : "0:v:0",
+        "-map",
+        "[aout]",
+        ...(flipPost
+          ? ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p"]
+          : ["-c:v", "copy"]),
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-t",
+        String(outDur),
+        "-movflags",
+        "+faststart",
+        "final.mp4",
+      ]);
+      if (musicPath) await ff.deleteFile(musicPath).catch(() => undefined);
+      if (req.signal?.aborted) throw new RenderError("Export cancelled.", "cancelled");
+      if (post === 0) {
+        await ff.deleteFile("out.mp4").catch(() => undefined);
+        await ff.rename("final.mp4", "out.mp4");
+      } else {
+        console.warn("audio post pass failed", logTail.join("\n"));
+        await ff.deleteFile("final.mp4").catch(() => undefined);
+        audioWarning = "Music / audio enhance couldn't be applied, so the original audio was kept.";
+      }
+    }
+    ff.off("log", onLog);
 
     if (code !== 0) {
       const log = logTail.join("\n");
@@ -455,6 +518,7 @@ export async function renderClip(req: VideoRenderRequest): Promise<VideoRenderRe
       smartReframe: usedSmart,
       cleanupApplied,
       cleanupWarning,
+      audioWarning,
     };
   } catch (e) {
     if (e instanceof RenderError) throw e;

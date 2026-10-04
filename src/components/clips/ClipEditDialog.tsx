@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Maximize2, Pause, Play, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import { FlipHorizontal2, Loader2, Maximize2, Music, Pause, Play, RotateCcw, Volume2, VolumeX, X } from "lucide-react";
+import type { BackgroundMusic } from "@/lib/video/export-extras";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,7 +76,15 @@ export function ClipEditDialog({
   onSave,
   onExport,
   onRequestVideo,
+  flip = false,
+  onFlipChange,
+  music = null,
+  onMusicChange,
 }: {
+  flip?: boolean | undefined;
+  onFlipChange?: ((v: boolean) => void) | undefined;
+  music?: BackgroundMusic | null | undefined;
+  onMusicChange?: ((m: BackgroundMusic | null) => void) | undefined;
   clip: ClipCandidate | null;
   maxSec?: number | undefined;
   videoUrl?: string | null | undefined;
@@ -95,6 +104,18 @@ export function ClipEditDialog({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const rafRef = useRef<number | null>(null);
+  const musicRef = useRef<HTMLAudioElement>(null);
+  const musicPickRef = useRef<HTMLInputElement>(null);
+  const [musicUrl, setMusicUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!music) return setMusicUrl(null);
+    const u = URL.createObjectURL(music.file);
+    setMusicUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [music?.file]);
+  useEffect(() => {
+    if (musicRef.current) musicRef.current.volume = music?.volume ?? 0.2;
+  }, [music?.volume, musicUrl]);
   const caps = captionSettings ?? DEFAULT_CAPTION_SETTINGS;
 
   const [title, setTitle] = useState("");
@@ -161,11 +182,19 @@ export function ClipEditDialog({
 
   const onVideoPlay = () => {
     setPlaying(true);
+    const m = musicRef.current;
+    const el = videoRef.current;
+    if (m && el) {
+      const len = m.duration || 0;
+      m.currentTime = len ? (el.currentTime - boundsRef.current.start) % len : 0;
+      void m.play().catch(() => undefined);
+    }
     stopLoop();
     rafRef.current = requestAnimationFrame(tick);
   };
   const onVideoPause = () => {
     setPlaying(false);
+    musicRef.current?.pause();
     stopLoop();
     const el = videoRef.current;
     if (el) setCurrent(el.currentTime);
@@ -365,7 +394,7 @@ export function ClipEditDialog({
                     playsInline
                     preload="auto"
                     className="size-full object-cover"
-                    style={{ objectPosition }}
+                    style={{ objectPosition, transform: flip ? "scaleX(-1)" : undefined }}
                     onClick={togglePlay}
                     onPlay={onVideoPlay}
                     onPause={onVideoPause}
@@ -600,6 +629,84 @@ export function ClipEditDialog({
               </div>
             </div>
 
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-border p-3">
+                <div className="flex items-center justify-between">
+                  <p className="flex items-center gap-2 text-sm font-medium">
+                    <FlipHorizontal2 className="size-4" /> Flip video
+                  </p>
+                  <Switch
+                    checked={flip}
+                    onCheckedChange={(v) => onFlipChange?.(v)}
+                    disabled={!onFlipChange}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Mirrors the picture left-to-right so your Short isn't identical to other uploads.
+                  Captions stay readable.
+                </p>
+              </div>
+              <div className="space-y-2 rounded-lg border border-border p-3">
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  <Music className="size-4" /> Background music
+                </p>
+                <input
+                  ref={musicPickRef}
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) onMusicChange?.({ file: f, volume: music?.volume ?? 0.2 });
+                    e.target.value = "";
+                  }}
+                />
+                {music ? (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-xs">{music.file.name}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label="Remove music"
+                        onClick={() => onMusicChange?.(null)}
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      Volume
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={music.volume}
+                        onChange={(e) =>
+                          onMusicChange?.({ ...music, volume: Number(e.target.value) })
+                        }
+                        className="flex-1 accent-primary"
+                      />
+                      {Math.round(music.volume * 100)}%
+                    </label>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => musicPickRef.current?.click()}
+                    disabled={!onMusicChange}
+                  >
+                    Add music
+                  </Button>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Loops under the voice and fades out at the end. Use music you have rights to.
+                </p>
+                {musicUrl ? <audio ref={musicRef} src={musicUrl} loop preload="auto" /> : null}
+              </div>
+            </div>
+
             <ClipTimeline
               durationSec={total}
               viewStartSec={viewStart}
@@ -635,6 +742,8 @@ export function ClipEditDialog({
                 ) : null}
                 <Info label="Captions" value={caps.enabled ? "On" : "Off"} />
                 <Info label="Reframe" value={usingSmart ? "Smart" : "Center"} />
+                <Info label="Flip" value={flip ? "On" : "Off"} />
+                <Info label="Music" value={music ? "On" : "Off"} />
                 <Info
                   label="Cleanup"
                   value={
