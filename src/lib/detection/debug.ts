@@ -12,7 +12,7 @@ import type { DetectionRule } from "./types";
 export function runSampleDetection(
   rules: DetectionRule[] = createDefaultRules(),
   transcript: TranscriptionResult = SAMPLE_TRANSCRIPT,
-): DetectionRunResult {
+): Promise<DetectionRunResult> {
   return runDetection(transcript, rules, { mode: "rules", now: () => "1970-01-01T00:00:00.000Z" });
 }
 

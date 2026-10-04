@@ -209,7 +209,7 @@ export async function runDetection(
   transcript: TranscriptionResult | undefined | null,
   rules: DetectionRule[],
   options: DetectionOptions = {},
-): DetectionRunResult {
+): Promise<DetectionRunResult> {
   const mode = options.mode ?? "rules";
   const base = { mode, candidates: [] as ClipCandidate[], analyzed: [] as AnalyzedCandidate[], topFailures: [] as DetectionRunResult["topFailures"] };
 
