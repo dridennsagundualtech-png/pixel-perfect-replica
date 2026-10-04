@@ -434,6 +434,7 @@ export async function renderClip(req: VideoRenderRequest): Promise<VideoRenderRe
     if (req.signal?.aborted) throw new RenderError("Export cancelled.", "cancelled");
 
     // Flip without vertical (no base filter) — apply in the post pass.
+    const finalDur = cleanupApplied ? outDur : range.durationSec;
     const flipPost = !!req.flip && !req.vertical;
     const enhance = buildAudioEnhanceFilter(req.audioEnhance);
     let audioWarning: string | undefined;
@@ -446,7 +447,7 @@ export async function renderClip(req: VideoRenderRequest): Promise<VideoRenderRe
           await ff.writeFile(musicPath, new Uint8Array(await req.music.file.arrayBuffer()));
         }
         const vol = Math.min(1, Math.max(0, req.music?.volume ?? 0.2));
-        const fadeSt = Math.max(0, outDur - 1.5);
+        const fadeSt = Math.max(0, finalDur - 1.5);
         const voice = `[0:a]${enhance || "anull"}[voice]`;
         const fc = musicPath
           ? `${voice};[1:a]volume=${vol},afade=t=out:st=${fadeSt}:d=1.5[bg];[voice][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`
@@ -469,7 +470,7 @@ export async function renderClip(req: VideoRenderRequest): Promise<VideoRenderRe
           "-b:a",
           "128k",
           "-t",
-          String(outDur),
+          String(finalDur),
           "-movflags",
           "+faststart",
           "final.mp4",
