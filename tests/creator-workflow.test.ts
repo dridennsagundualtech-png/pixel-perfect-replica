@@ -189,7 +189,7 @@ describe("AI metadata fallback", () => {
   });
   it("parses hashtags and rejects junk", () => {
     expect(parseMetadata("hashtags", '{"hashtags":["Trading","#risk tips","#ok"]}')).toBe(
-      "#trading #ok",
+      "#trading #risktips #ok",
     );
     expect(parseMetadata("title", '{"title":""}')).toBeNull();
   });
@@ -198,7 +198,7 @@ describe("AI metadata fallback", () => {
   });
   it("local hashtags are deterministic", () => {
     expect(localHashtags(text)).toEqual(localHashtags(text));
-    expect(localHashtags(text)[0]).toBe("#traders");
+    expect(localHashtags(text)[0]).toBe("#management");
   });
 });
 

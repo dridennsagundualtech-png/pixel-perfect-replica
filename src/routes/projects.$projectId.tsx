@@ -784,7 +784,7 @@ function WorkspacePage() {
       outputName: name,
       signal: controller.signal,
       vertical: true,
-        ...renderFormat(),
+      ...renderFormat(),
       reframe,
       editPlan: plan.isIdentity ? undefined : plan,
       captionAss,
@@ -1091,7 +1091,8 @@ function WorkspacePage() {
                   musicOn={!!exportExtras.music}
                   musicVolume={exportExtras.music?.volume ?? 0.2}
                   onMusicVolume={(v) =>
-                    exportExtras.music && exportExtras.setMusic({ ...exportExtras.music, volume: v })
+                    exportExtras.music &&
+                    exportExtras.setMusic({ ...exportExtras.music, volume: v })
                   }
                   step={editing ? 3 : renderingClipId ? 4 : 1}
                 />
@@ -1239,7 +1240,9 @@ function WorkspacePage() {
               outputSettings={outputSettings}
               onOutputSettingsChange={updateOutputSettings}
               onThumbnail={(url) => editing && setClipThumbnail(editing.id, url)}
-              onRegenerateThumbnail={(s0, e0) => editing && refreshThumbnail(editing.id, s0, e0, true)}
+              onRegenerateThumbnail={(s0, e0) =>
+                editing && refreshThumbnail(editing.id, s0, e0, true)
+              }
               onClose={() => setEditing(null)}
               onSave={saveClip}
               onExport={(c) => void exportVideo(c)}
