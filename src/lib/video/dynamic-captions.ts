@@ -10,14 +10,7 @@ import type { TranscriptSegment, TranscriptWord } from "@/lib/detection/transcri
 import { CAPTION_FONT_NAME, SHORT_HEIGHT, SHORT_WIDTH } from "./short-captions";
 
 export type CaptionStyleId =
-  | "classic"
-  | "highlight"
-  | "clean"
-  | "impact"
-  | "karaoke"
-  | "minimal"
-  | "bold"
-  | "podcast";
+  "classic" | "highlight" | "clean" | "impact" | "karaoke" | "minimal" | "bold" | "podcast";
 export type CaptionPosition = "top" | "center" | "lower" | "bottom";
 export type CaptionSize = "small" | "medium" | "large";
 

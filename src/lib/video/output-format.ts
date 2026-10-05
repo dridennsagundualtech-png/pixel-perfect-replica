@@ -114,8 +114,7 @@ export function normalizeOutputSettings(raw: unknown): OutputSettings {
   return {
     format: v.format && v.format in FORMAT_META ? v.format : DEFAULT_OUTPUT_SETTINGS.format,
     resolution: v.resolution === "hd" ? "hd" : "standard",
-    reframe:
-      v.reframe && v.reframe in REFRAME_LABELS ? v.reframe : DEFAULT_OUTPUT_SETTINGS.reframe,
+    reframe: v.reframe && v.reframe in REFRAME_LABELS ? v.reframe : DEFAULT_OUTPUT_SETTINGS.reframe,
     manualX: clamp01(Number(v.manualX ?? 0.5)),
   };
 }

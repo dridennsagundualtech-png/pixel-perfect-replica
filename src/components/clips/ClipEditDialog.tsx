@@ -487,7 +487,8 @@ export function ClipEditDialog({
             <div className={`mx-auto w-full ${PREVIEW_WIDTH[out.format]}`}>
               <div
                 style={{ aspectRatio: FORMAT_META[out.format].css }}
-                className="relative overflow-hidden rounded-xl border border-border bg-background">
+                className="relative overflow-hidden rounded-xl border border-border bg-background"
+              >
                 {videoUrl ? (
                   <video
                     ref={videoRef}
@@ -928,7 +929,9 @@ export function ClipEditDialog({
                         void navigator.clipboard
                           .writeText(hashtags.trim())
                           .then(() => toast.success("Hashtags copied"))
-                          .catch(() => toast.error("Couldn't copy — select and copy them manually."))
+                          .catch(() =>
+                            toast.error("Couldn't copy — select and copy them manually."),
+                          )
                       }
                     >
                       Copy hashtags

@@ -81,7 +81,9 @@ export function localDescription(text: string): string {
 
 export function localHashtags(text: string, max = 5): string[] {
   const counts = new Map<string, number>();
-  for (const raw of tidy(text).toLowerCase().split(/[^a-z0-9']+/)) {
+  for (const raw of tidy(text)
+    .toLowerCase()
+    .split(/[^a-z0-9']+/)) {
     const w = raw.replace(/'/g, "");
     if (w.length < 4 || STOP.has(w) || /^\d+$/.test(w)) continue;
     counts.set(w, (counts.get(w) ?? 0) + 1);

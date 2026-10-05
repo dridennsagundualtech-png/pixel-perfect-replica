@@ -142,7 +142,10 @@ export function CreatorPresetsPanel({
               onValueChange={(id) => {
                 const p = presets.find((x) => x.id === id);
                 if (p) apply(p);
-                else toast.error("This preset could not be loaded. Your current settings were preserved.");
+                else
+                  toast.error(
+                    "This preset could not be loaded. Your current settings were preserved.",
+                  );
               }}
             >
               <SelectTrigger>
@@ -265,7 +268,8 @@ export function CreatorPresetsPanel({
         <Badge variant="outline">Audio enhance {audioEnhance.enabled ? "on" : "off"}</Badge>
         <Badge variant="outline">Music {musicOn ? "on" : "off"}</Badge>
         <Badge variant="outline">
-          Reframe {output.reframe === "auto" ? "automatic" : `manual (${REFRAME_LABELS[output.reframe]})`}
+          Reframe{" "}
+          {output.reframe === "auto" ? "automatic" : `manual (${REFRAME_LABELS[output.reframe]})`}
         </Badge>
       </div>
     </div>

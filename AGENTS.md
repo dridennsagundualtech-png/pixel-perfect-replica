@@ -28,3 +28,6 @@
 - Batch export queue logic lives in pure `src/lib/batch-export.ts` (`runBatch`) so one failed clip never stops a batch and it is unit-tested; the page only wires UI state.
 - Automated tests: `bun run test` (vitest, `tests/`) covers detection, Best Moments, captions, edit timeline, reframe rebasing, batch and Ollama fallback; keep it green.
 - Export extras (flip, background music, audio enhance) run in `renderClip`: flip is applied before captions; music/enhance is a post audio pass that falls back to original audio on failure.
+- Output format/resolution/manual reframe live in `src/lib/video/output-format.ts` and only configure the existing `renderClip` (`outputSize`, `manualX`) and `buildDynamicAss(..., frame)`; default must stay 720×1280 auto so the original 9:16 export is byte-identical. No per-format pipelines.
+- Creator presets (`src/lib/creator-presets.ts`) are local, validated on load, and store visual caption fields only — never caption timing fields.
+- Clip title/description/hashtags go through `src/lib/clip-metadata.ts`: Ollama when enabled, else deterministic local fallback; never claim guaranteed reach.
