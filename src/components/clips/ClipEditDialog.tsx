@@ -735,7 +735,7 @@ export function ClipEditDialog({
                   value={
                     EXPORT_PRESETS.find(
                       (p) => p.format === out.format && p.resolution === out.resolution,
-                    )?.id
+                    )?.id ?? ""
                   }
                   onValueChange={(id) => {
                     const p = EXPORT_PRESETS.find((x) => x.id === id);

@@ -117,7 +117,7 @@ export function parseMetadata(kind: MetadataKind, raw: string): string | null {
   try {
     const obj = JSON.parse(raw.slice(a, b + 1)) as Record<string, unknown>;
     if (kind === "hashtags") {
-      const arr = obj.hashtags;
+      const arr = obj["hashtags"];
       if (!Array.isArray(arr)) return null;
       const tags = arr
         .map((t) => String(t).trim().replace(/\s+/g, ""))

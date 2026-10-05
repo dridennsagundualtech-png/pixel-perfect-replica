@@ -138,7 +138,7 @@ export function CreatorPresetsPanel({
           <Label className="text-xs text-muted-foreground">Creator preset</Label>
           <div className="flex gap-2">
             <Select
-              value={activeId || undefined}
+              value={activeId}
               onValueChange={(id) => {
                 const p = presets.find((x) => x.id === id);
                 if (p) apply(p);
@@ -215,7 +215,7 @@ export function CreatorPresetsPanel({
                 value={
                   EXPORT_PRESETS.find(
                     (p) => p.format === output.format && p.resolution === output.resolution,
-                  )?.id
+                  )?.id ?? ""
                 }
                 onValueChange={(id) => {
                   const p = EXPORT_PRESETS.find((x) => x.id === id);
