@@ -1,11 +1,20 @@
 import { Link } from "@tanstack/react-router";
-import { LayoutDashboard, FolderOpen, LayoutTemplate, Settings, Scissors } from "lucide-react";
+import {
+  LayoutDashboard,
+  FolderOpen,
+  LayoutTemplate,
+  Megaphone,
+  Settings,
+  Scissors,
+} from "lucide-react";
+import { CampaignModeBanner } from "@/components/campaign/CampaignModeBanner";
 import type { ReactNode } from "react";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/projects", label: "Projects", icon: FolderOpen },
   { to: "/templates", label: "Templates", icon: LayoutTemplate },
+  { to: "/campaigns", label: "Campaigns", icon: Megaphone },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
@@ -35,6 +44,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
         </div>
+        <CampaignModeBanner />
       </header>
 
       <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6">{children}</main>
