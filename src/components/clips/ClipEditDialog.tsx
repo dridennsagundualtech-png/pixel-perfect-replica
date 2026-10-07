@@ -64,6 +64,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import type { MetadataKind } from "@/lib/clip-metadata";
+import { CampaignEditorPanel } from "@/components/campaign/CampaignEditorPanel";
 
 /**
  * Clip inspector + trimmer: 9:16 preview with live captions, trim, caption /
@@ -112,7 +113,11 @@ export function ClipEditDialog({
   onOutputSettingsChange,
   onThumbnail,
   onRegenerateThumbnail,
+  sourceFileName,
+  transcriptLanguage,
 }: {
+  sourceFileName?: string | undefined;
+  transcriptLanguage?: string | undefined;
   outputSettings?: OutputSettings | undefined;
   onOutputSettingsChange?: ((patch: Partial<OutputSettings>) => void) | undefined;
   onThumbnail?: ((dataUrl: string) => void) | undefined;
@@ -989,6 +994,28 @@ export function ClipEditDialog({
                 </p>
               </div>
             </div>
+
+            <CampaignEditorPanel
+              ctx={{
+                startSec: start,
+                endSec: end,
+                transcriptText: clipText() || clip.transcriptText || "",
+                segments,
+                title,
+                description,
+                hashtags,
+                aspect: FORMAT_META[out.format].ratio,
+                captionsEnabled: caps.enabled,
+                sourceFileName,
+                language: transcriptLanguage,
+              }}
+              engagementPotential={clip.engagementPotential}
+              onUseHook={setTitle}
+              hashtags={hashtags}
+              onHashtags={setHashtags}
+              description={description}
+              onDescription={setDescription}
+            />
 
             <ClipTimeline
               durationSec={total}
