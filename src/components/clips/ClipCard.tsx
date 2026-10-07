@@ -20,7 +20,9 @@ export function ClipCard({
   thumbnailPending,
   selected,
   onToggleSelect,
+  campaignSlot,
 }: {
+  campaignSlot?: React.ReactNode;
   clip: ClipCandidate;
   onPreview?: (c: ClipCandidate) => void;
   onEdit?: (c: ClipCandidate) => void;
@@ -92,6 +94,7 @@ export function ClipCard({
           </p>
         </div>
 
+        {campaignSlot}
         {/* Status chips */}
         <div className="flex flex-wrap gap-1.5">
           {typeof clip.score === "number" ? (
