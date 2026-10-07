@@ -33,6 +33,9 @@ import {
   useOutputSettings,
 } from "@/lib/video/output-format";
 import { CreatorPresetsPanel } from "@/components/clips/CreatorPresetsPanel";
+import { useCampaigns } from "@/lib/campaign/campaign-store";
+import { evaluateClipForCampaign } from "@/lib/campaign/compliance";
+import { CampaignClipStatus } from "@/components/campaign/CampaignClipStatus";
 import { CleanupSettingsPanel } from "@/components/clips/CleanupSettingsPanel";
 import { AiSettingsPanel } from "@/components/detection/AiSettingsPanel";
 import { DetectionModeSelector } from "@/components/detection/DetectionModeSelector";
@@ -136,6 +139,7 @@ function WorkspacePage() {
     setAudioEnhance(saveAudioEnhanceSettings(patch));
   const exportExtras = useExportExtras();
   const [outputSettings, updateOutputSettings] = useOutputSettings();
+  const { active: activeCampaign } = useCampaigns();
   const outputSize = getOutputSize(outputSettings.format, outputSettings.resolution);
   const renderFormat = () => ({ outputSize, manualX: manualReframeX(outputSettings) });
   useEffect(() => () => renderAbortRef.current?.abort(), []);
@@ -1218,6 +1222,25 @@ function WorkspacePage() {
                     thumbnailPending={!clip.thumbnailUrl && !!file}
                     selected={selectedClipIds.has(clip.id)}
                     onToggleSelect={toggleSelectClip}
+                    campaignSlot={
+                      activeCampaign ? (
+                        <CampaignClipStatus
+                          evaluation={evaluateClipForCampaign(activeCampaign, {
+                            startSec: clip.startSec,
+                            endSec: clip.endSec,
+                            transcriptText: clip.transcriptText ?? "",
+                            segments,
+                            title: clip.title,
+                            description: clip.description,
+                            hashtags: clip.hashtags,
+                            aspect: FORMAT_META[outputSettings.format].ratio,
+                            captionsEnabled: captionSettings.enabled,
+                            sourceFileName: project.video?.fileName,
+                            language: project.transcript?.language,
+                          })}
+                        />
+                      ) : null
+                    }
                   />
                 ))}
               </div>
@@ -1238,6 +1261,8 @@ function WorkspacePage() {
               music={exportExtras.music}
               onMusicChange={exportExtras.setMusic}
               outputSettings={outputSettings}
+              sourceFileName={project.video?.fileName}
+              transcriptLanguage={project.transcript?.language}
               onOutputSettingsChange={updateOutputSettings}
               onThumbnail={(url) => editing && setClipThumbnail(editing.id, url)}
               onRegenerateThumbnail={(s0, e0) =>

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Captions, Download, Loader2, Pencil, Play, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,9 @@ export function ClipCard({
   thumbnailPending,
   selected,
   onToggleSelect,
+  campaignSlot,
 }: {
+  campaignSlot?: ReactNode;
   clip: ClipCandidate;
   onPreview?: (c: ClipCandidate) => void;
   onEdit?: (c: ClipCandidate) => void;
@@ -92,6 +95,7 @@ export function ClipCard({
           </p>
         </div>
 
+        {campaignSlot}
         {/* Status chips */}
         <div className="flex flex-wrap gap-1.5">
           {typeof clip.score === "number" ? (
