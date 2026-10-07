@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Captions, Download, Loader2, Pencil, Play, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ export function ClipCard({
   onToggleSelect,
   campaignSlot,
 }: {
-  campaignSlot?: React.ReactNode;
+  campaignSlot?: ReactNode;
   clip: ClipCandidate;
   onPreview?: (c: ClipCandidate) => void;
   onEdit?: (c: ClipCandidate) => void;
