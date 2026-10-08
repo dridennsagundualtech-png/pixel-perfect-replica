@@ -14,9 +14,12 @@ import { CATEGORY_LABELS, TYPE_LABELS } from "./types";
  * Nothing is active until the user reviews and activates the campaign.
  */
 
-const PROHIBIT = /\b(do not|don't|dont|never|avoid|no\s+\w+|not allowed|prohibited|forbidden|must not|mustn't|without)\b/i;
-const REQUIRE = /\b(must|required|requires?|need(s)? to|every|always|only|mandatory|has to|have to)\b/i;
-const SOFT = /\b(prefer(red|ably)?|should|ideally|recommend(ed)?|try to|encourage(d)?|bonus|nice to have|if possible)\b/i;
+const PROHIBIT =
+  /\b(do not|don't|dont|never|avoid|no\s+\w+|not allowed|prohibited|forbidden|must not|mustn't|without)\b/i;
+const REQUIRE =
+  /\b(must|required|requires?|need(s)? to|every|always|only|mandatory|has to|have to)\b/i;
+const SOFT =
+  /\b(prefer(red|ably)?|should|ideally|recommend(ed)?|try to|encourage(d)?|bonus|nice to have|if possible)\b/i;
 
 const LANGUAGES = [
   "english",
@@ -45,6 +48,9 @@ export function classifyType(text: string): RequirementType {
   if (/^\s*(no|avoid)\b/.test(t)) return "prohibited";
   if (SOFT.test(t) && !/\bmust\b|\brequired\b|\bmandatory\b/.test(t)) return "recommended";
   if (REQUIRE.test(t)) return "required";
+  // Imperative instructions ("Tag @x", "Include #y") read as requirements.
+  if (/^\s*(tag|include|add|use|mention|post|keep|put|show|start|end|credit|link|submit)\b/.test(t))
+    return "required";
   if (PROHIBIT.test(t) && /\b(no|avoid)\b/.test(t)) return "prohibited";
   return "review";
 }
@@ -59,7 +65,11 @@ export function classifyCategory(text: string, type: RequirementType): Requireme
   if (type === "prohibited") return "prohibited";
   if (/tiktok|reels|instagram|youtube shorts|deadline|post(ing)? (time|by)|submit/.test(t))
     return "posting";
-  if (/\d+ ?(s|sec|seconds|minutes?)\b|duration|aspect|9:16|1:1|16:9|subtitle|caption|pacing|intro|outro/.test(t))
+  if (
+    /\d+ ?(s|sec|seconds|minutes?)\b|duration|aspect|9:16|1:1|16:9|subtitle|caption|pacing|intro|outro/.test(
+      t,
+    )
+  )
     return "editing";
   if (/brand|logo|mention|name|phrase|account/.test(t)) return "branding";
   if (/priorit|focus on|highlight|best|strong|funny|emotional|clutch|reaction/.test(t))
@@ -69,10 +79,14 @@ export function classifyCategory(text: string, type: RequirementType): Requireme
 }
 
 /** Deterministic check that can be run with plain code, when the text implies one. */
-export function extractCheck(text: string, approvedSources: string[] = []): RequirementCheck | undefined {
+export function extractCheck(
+  text: string,
+  approvedSources: string[] = [],
+): RequirementCheck | undefined {
   const t = text.toLowerCase();
   const tags = text.match(/#[\p{L}\p{N}_]{2,}/gu);
-  if (tags?.length) return { kind: "hashtag", values: [...new Set(tags.map((x) => x.toLowerCase()))] };
+  if (tags?.length)
+    return { kind: "hashtag", values: [...new Set(tags.map((x) => x.toLowerCase()))] };
   const handles = text.match(/(?:^|\s)@[\w.]{2,}/g);
   if (handles?.length)
     return { kind: "account", values: [...new Set(handles.map((h) => h.trim().toLowerCase()))] };
@@ -85,10 +99,16 @@ export function extractCheck(text: string, approvedSources: string[] = []): Requ
     const values = quoted.length ? quoted : mention ? [mention[1]!] : undefined;
     return { kind: "hook-time", seconds: Number(within[1]), values };
   }
-  const max = t.match(/(?:under|max(?:imum)?|no longer than|at most|up to|shorter than|less than) (\d+) ?(s|sec|secs|seconds|min|minutes?)\b/);
-  if (max) return { kind: "max-duration", seconds: Number(max[1]) * (max[2]!.startsWith("min") ? 60 : 1) };
-  const min = t.match(/(?:at least|min(?:imum)?|longer than|more than|over) (\d+) ?(s|sec|secs|seconds|min|minutes?)\b/);
-  if (min) return { kind: "min-duration", seconds: Number(min[1]) * (min[2]!.startsWith("min") ? 60 : 1) };
+  const max = t.match(
+    /(?:under|max(?:imum)?|no longer than|at most|up to|shorter than|less than) (\d+) ?(s|sec|secs|seconds|min|minutes?)\b/,
+  );
+  if (max)
+    return { kind: "max-duration", seconds: Number(max[1]) * (max[2]!.startsWith("min") ? 60 : 1) };
+  const min = t.match(
+    /(?:at least|min(?:imum)?|longer than|more than|over) (\d+) ?(s|sec|secs|seconds|min|minutes?)\b/,
+  );
+  if (min)
+    return { kind: "min-duration", seconds: Number(min[1]) * (min[2]!.startsWith("min") ? 60 : 1) };
   const lang = LANGUAGES.find((l) => t.includes(l));
   if (lang && /language|caption|subtitle|speak|audio|english|spoken|in /.test(t))
     return { kind: "language", values: [lang] };
@@ -99,7 +119,9 @@ export function extractCheck(text: string, approvedSources: string[] = []): Requ
   if (/approved|official|provided/.test(t) && /footage|source|file|recording/.test(t))
     return { kind: "source", values: approvedSources };
   if (quoted.length || /\bmention\b|\binclude the (word|phrase|name)\b/.test(t)) {
-    const mention = text.match(/mention(?:s|ing)? (?:the )?([A-Z0-9][\w'&-]*(?: [A-Z0-9][\w'&-]*)*)/);
+    const mention = text.match(
+      /mention(?:s|ing)? (?:the )?([A-Z0-9][\w'&-]*(?: [A-Z0-9][\w'&-]*)*)/,
+    );
     const values = quoted.length ? quoted : mention ? [mention[1]!] : [];
     if (values.length) return { kind: "phrase", values };
   }
@@ -129,14 +151,21 @@ function build(
     category: cat,
     text: text.slice(0, 300),
     type: ty,
-    method: check ? "automatic" : cat === "content" || cat === "priority" || ty === "prohibited" ? "ai" : "manual",
+    method: check
+      ? "automatic"
+      : cat === "content" || cat === "priority" || ty === "prohibited"
+        ? "ai"
+        : "manual",
     active: true,
     check,
     origin,
   };
 }
 
-export function parseBriefLocal(brief: string, approvedSources: string[] = []): CampaignRequirement[] {
+export function parseBriefLocal(
+  brief: string,
+  approvedSources: string[] = [],
+): CampaignRequirement[] {
   const seen = new Set<string>();
   const out: CampaignRequirement[] = [];
   for (const line of splitBrief(brief)) {
@@ -155,7 +184,12 @@ export function detectAiConflict(brief: string): boolean {
   );
 }
 
-const RANK: Record<RequirementType, number> = { review: 0, recommended: 1, required: 2, prohibited: 2 };
+const RANK: Record<RequirementType, number> = {
+  review: 0,
+  recommended: 1,
+  required: 2,
+  prohibited: 2,
+};
 
 /** Validate an AI item; the stricter of AI vs. local wording never wins silently. */
 export function reconcileType(aiType: RequirementType, text: string): RequirementType {
@@ -182,7 +216,8 @@ export function parseAiRequirements(
       if (text.length < 3) continue;
       const t = String(r["type"] ?? "");
       const c = String(r["category"] ?? "");
-      const type = t in TYPE_LABELS ? reconcileType(t as RequirementType, text) : classifyType(text);
+      const type =
+        t in TYPE_LABELS ? reconcileType(t as RequirementType, text) : classifyType(text);
       const cat = c in CATEGORY_LABELS ? (c as RequirementCategory) : undefined;
       out.push(build(text, approvedSources, "ai", type, cat));
     }
@@ -209,7 +244,8 @@ export async function parseBrief(
 ): Promise<ParseResult> {
   const aiConflict = detectAiConflict(brief);
   const local = parseBriefLocal(brief, approvedSources);
-  if (!brief.trim()) return { requirements: [], source: "local", aiConflict, warning: "The brief is empty." };
+  if (!brief.trim())
+    return { requirements: [], source: "local", aiConflict, warning: "The brief is empty." };
   if (deps.ollama?.enabled && deps.generate) {
     const prompt = `Split this campaign brief into individual requirements. Use only what the brief says; do not invent requirements.
 Categories: ${Object.keys(CATEGORY_LABELS).join(", ")}.
@@ -226,14 +262,16 @@ ${brief.slice(0, 6000)}`;
         requirements: local,
         source: "local",
         aiConflict,
-        warning: "The AI reply couldn't be used, so requirements were extracted locally. Please review them.",
+        warning:
+          "The AI reply couldn't be used, so requirements were extracted locally. Please review them.",
       };
     } catch {
       return {
         requirements: local,
         source: "local",
         aiConflict,
-        warning: "Ollama is unavailable, so requirements were extracted locally. Please review them.",
+        warning:
+          "Ollama is unavailable, so requirements were extracted locally. Please review them.",
       };
     }
   }

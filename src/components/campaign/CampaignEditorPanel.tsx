@@ -101,8 +101,8 @@ export function CampaignEditorPanel({
         <Megaphone className="size-4 text-primary" />
         <span className="font-semibold">Campaign: {active.name}</span>
         <span className="ml-auto font-mono text-xs">
-          Engagement Potential {engagementPotential ?? "—"} · Campaign Fit {evaluation.fit ?? "—"}{" "}
-          · {evaluation.status}
+          Engagement Potential {engagementPotential ?? "—"} · Campaign Fit {evaluation.fit ?? "—"} ·{" "}
+          {evaluation.status}
         </span>
       </div>
       <CampaignChecklist evaluation={evaluation} />
@@ -146,7 +146,12 @@ export function CampaignEditorPanel({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <p className="font-medium">Suggested hooks (editorial text, not quotes)</p>
-          <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void genHooks()}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy !== null}
+            onClick={() => void genHooks()}
+          >
             {busy === "hooks" ? <Loader2 className="size-3 animate-spin" /> : null}
             {hooks.length ? "Generate more" : "Suggest hooks"}
           </Button>
@@ -157,7 +162,9 @@ export function CampaignEditorPanel({
               <Input
                 value={h}
                 autoFocus
-                onChange={(e) => setHooks((all) => all.map((x, j) => (j === i ? e.target.value : x)))}
+                onChange={(e) =>
+                  setHooks((all) => all.map((x, j) => (j === i ? e.target.value : x)))
+                }
                 onBlur={() => setEditing(null)}
               />
             ) : (

@@ -7,13 +7,21 @@ import type { Campaign } from "./types";
  * "X said" attribution is rejected unless it appears verbatim in the transcript.
  */
 
-const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").replace(/\s+/g, " ").trim();
+const norm = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N} ]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 export function isFabricatedQuote(hook: string, transcript: string): boolean {
   const t = norm(transcript);
   const quotes = [...hook.matchAll(/["“”«»]([^"“”«»]{3,})["“”«»]/g)].map((m) => m[1]!);
   if (quotes.some((q) => !t.includes(norm(q)))) return true;
-  if (/\b(said|says|told|admits?|claims?|confess(es|ed)?)\b\s*[:"“]/i.test(hook) && quotes.length === 0)
+  if (
+    /\b(said|says|told|admits?|claims?|confess(es|ed)?)\b\s*[:"“]/i.test(hook) &&
+    quotes.length === 0
+  )
     return true;
   return false;
 }
@@ -72,10 +80,21 @@ ${reqs ? `Hook rules:\n${reqs}\n` : ""}Return ONLY JSON: {"hooks":["..."]}
 Transcript:
 ${transcript.slice(0, 2000)}`;
   try {
-    const ai = parseAiHooks(await deps.generate(deps.ollama.baseUrl, deps.ollama.model, prompt), transcript);
+    const ai = parseAiHooks(
+      await deps.generate(deps.ollama.baseUrl, deps.ollama.model, prompt),
+      transcript,
+    );
     if (ai) return { hooks: ai, source: "ollama" };
-    return { hooks: local, source: "local", warning: "The AI reply couldn't be used; showing local hooks." };
+    return {
+      hooks: local,
+      source: "local",
+      warning: "The AI reply couldn't be used; showing local hooks.",
+    };
   } catch {
-    return { hooks: local, source: "local", warning: "Ollama is unavailable; showing local hooks." };
+    return {
+      hooks: local,
+      source: "local",
+      warning: "Ollama is unavailable; showing local hooks.",
+    };
   }
 }

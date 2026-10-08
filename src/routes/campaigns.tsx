@@ -47,7 +47,8 @@ export const Route = createFileRoute("/campaigns")({
       { title: "Campaign Mode — ClipPilot" },
       {
         name: "description",
-        content: "Turn any campaign brief into a reviewable checklist that ClipPilot checks your clips against.",
+        content:
+          "Turn any campaign brief into a reviewable checklist that ClipPilot checks your clips against.",
       },
       { property: "og:title", content: "Campaign Mode — ClipPilot" },
       {
@@ -238,7 +239,9 @@ function CampaignEditor({
       <section className="panel space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="font-display text-lg font-semibold">{draft.name}</h2>
-          <Badge variant={isActive ? "default" : "outline"}>{isActive ? "Active" : "Inactive"}</Badge>
+          <Badge variant={isActive ? "default" : "outline"}>
+            {isActive ? "Active" : "Inactive"}
+          </Badge>
           <span className="text-xs text-muted-foreground">
             {counts("required")} requirements · {counts("prohibited")} restrictions ·{" "}
             {counts("recommended")} recommendations · {counts("review")} to review
@@ -337,7 +340,11 @@ function CampaignEditor({
             onChange={(e) => set({ brief: e.target.value })}
           />
         </Field>
-        <Button variant="secondary" disabled={parsing || !draft.brief.trim()} onClick={() => void analyze()}>
+        <Button
+          variant="secondary"
+          disabled={parsing || !draft.brief.trim()}
+          onClick={() => void analyze()}
+        >
           {parsing ? <Loader2 className="size-4 animate-spin" /> : null}
           Analyze brief
         </Button>
@@ -351,7 +358,12 @@ function CampaignEditor({
               rows={3}
               value={draft.approvedSources.join("\n")}
               onChange={(e) =>
-                set({ approvedSources: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })
+                set({
+                  approvedSources: e.target.value
+                    .split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                })
               }
             />
             <input
@@ -372,7 +384,11 @@ function CampaignEditor({
             />
           </Field>
           <Field label="Notes (optional)">
-            <Textarea rows={3} value={draft.notes ?? ""} onChange={(e) => set({ notes: e.target.value })} />
+            <Textarea
+              rows={3}
+              value={draft.notes ?? ""}
+              onChange={(e) => set({ notes: e.target.value })}
+            />
           </Field>
         </div>
       </section>
@@ -420,7 +436,10 @@ function CampaignEditor({
                   r.active ? "" : "opacity-50"
                 }`}
               >
-                <Input value={r.text} onChange={(e) => setReq(r.id, { text: e.target.value, check: undefined })} />
+                <Input
+                  value={r.text}
+                  onChange={(e) => setReq(r.id, { text: e.target.value, check: undefined })}
+                />
                 <Select
                   value={r.category}
                   onValueChange={(v) => setReq(r.id, { category: v as RequirementCategory })}
@@ -436,7 +455,10 @@ function CampaignEditor({
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={r.type} onValueChange={(v) => setReq(r.id, { type: v as RequirementType })}>
+                <Select
+                  value={r.type}
+                  onValueChange={(v) => setReq(r.id, { type: v as RequirementType })}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -472,7 +494,9 @@ function CampaignEditor({
                   size="icon"
                   variant="ghost"
                   aria-label="Remove requirement"
-                  onClick={() => set({ requirements: draft.requirements.filter((x) => x.id !== r.id) })}
+                  onClick={() =>
+                    set({ requirements: draft.requirements.filter((x) => x.id !== r.id) })
+                  }
                 >
                   <Trash2 className="size-4" />
                 </Button>
@@ -481,7 +505,11 @@ function CampaignEditor({
                     Auto check: {r.check.kind}
                     {r.check.values?.length ? ` · ${r.check.values.join(", ")}` : ""}
                     {r.check.seconds != null ? ` · ${r.check.seconds}s` : ""} ·{" "}
-                    {r.origin === "ai" ? "from Ollama" : r.origin === "local" ? "from local parser" : "edited by you"}
+                    {r.origin === "ai"
+                      ? "from Ollama"
+                      : r.origin === "local"
+                        ? "from local parser"
+                        : "edited by you"}
                   </p>
                 ) : null}
               </div>

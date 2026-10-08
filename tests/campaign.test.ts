@@ -26,7 +26,12 @@ import {
   parseAiAssessment,
   type ClipCampaignContext,
 } from "../src/lib/campaign/compliance";
-import { isFabricatedQuote, localHooks, parseAiHooks, suggestHooks } from "../src/lib/campaign/campaign-hooks";
+import {
+  isFabricatedQuote,
+  localHooks,
+  parseAiHooks,
+  suggestHooks,
+} from "../src/lib/campaign/campaign-hooks";
 import type { Campaign } from "../src/lib/campaign/types";
 
 const mem = (): KeyValueStorage => {
@@ -102,7 +107,10 @@ describe("campaign store", () => {
   });
   it("isolates requirements between campaigns", () => {
     const st = mem();
-    const mma = createCampaign({ name: "MMA", requirements: [makeRequirement("Mention fighter names")] }, st);
+    const mma = createCampaign(
+      { name: "MMA", requirements: [makeRequirement("Mention fighter names")] },
+      st,
+    );
     const game = createCampaign({ name: "Gaming" }, st);
     activateCampaign(mma.id, st);
     activateCampaign(game.id, st);
@@ -217,14 +225,22 @@ describe("compliance", () => {
   it("hook outside the window fails", () => {
     const late = ctx({
       segments: [
-        { id: "s", startSec: 10, endSec: 20, text: "x GameX", words: [{ text: "GameX", startSec: 15, endSec: 15.5 }] },
+        {
+          id: "s",
+          startSec: 10,
+          endSec: 20,
+          text: "x GameX",
+          words: [{ text: "GameX", startSec: 15, endSec: 15.5 }],
+        },
       ],
     });
     const e = evaluateClipForCampaign(camp, late)!;
     expect(e.outcomes.find((o) => o.requirement.check?.kind === "hook-time")!.result).toBe("fail");
   });
   it("PASS when all mandatory checks are verified", () => {
-    const c = campaignWith(parseBriefLocal("Every video must include #GameX.\nClips should be under 45 seconds."));
+    const c = campaignWith(
+      parseBriefLocal("Every video must include #GameX.\nClips should be under 45 seconds."),
+    );
     const e = evaluateClipForCampaign(c, ctx())!;
     expect(e.status).toBe("PASS");
     expect(e.fit).toBe(100);
@@ -243,7 +259,9 @@ describe("compliance", () => {
     expect(evaluateClipForCampaign(c, ctx({ sourceFileName: "MATCH1.mp4" }))!.status).toBe("PASS");
   });
   it("validates AI assessments and never turns AI 'met' into PASS for mandatory rules", () => {
-    const c = campaignWith([makeRequirement("Must show a funny reaction", "content", "required", "ai")]);
+    const c = campaignWith([
+      makeRequirement("Must show a funny reaction", "content", "required", "ai"),
+    ]);
     const id = c.requirements[0]!.id;
     expect(parseAiAssessment("nope", c)).toBeNull();
     const ai = parseAiAssessment(`{"fit":90,"met":["${id}","bogus"],"violated":[]}`, c)!;
@@ -262,9 +280,9 @@ describe("no fabricated quotes", () => {
   });
   it("local and AI hooks never contain fabricated quotes", async () => {
     for (const h of localHooks(null, t)) expect(isFabricatedQuote(h, t)).toBe(false);
-    expect(parseAiHooks('{"hooks":["He said: \\"I am the best\\"","Watch this clutch"]}', t)).toEqual([
-      "Watch this clutch",
-    ]);
+    expect(
+      parseAiHooks('{"hooks":["He said: \\"I am the best\\"","Watch this clutch"]}', t),
+    ).toEqual(["Watch this clutch"]);
     const r = await suggestHooks(null, t, {
       ollama: { enabled: true, model: "m", baseUrl: "x" },
       generate: () => Promise.reject(new Error("down")),

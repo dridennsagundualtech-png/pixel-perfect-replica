@@ -54,7 +54,17 @@ export interface CampaignEvaluation {
   issues: string[];
 }
 
-const PROFANITY = ["fuck", "shit", "bitch", "asshole", "bastard", "damn", "dick", "cunt", "motherfucker"];
+const PROFANITY = [
+  "fuck",
+  "shit",
+  "bitch",
+  "asshole",
+  "bastard",
+  "damn",
+  "dick",
+  "cunt",
+  "motherfucker",
+];
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ");
 
@@ -93,7 +103,11 @@ export function keywords(text: string): string[] {
   ];
 }
 
-function evaluate(req: CampaignRequirement, ctx: ClipCampaignContext, campaign: Campaign): RequirementOutcome {
+function evaluate(
+  req: CampaignRequirement,
+  ctx: ClipCampaignContext,
+  campaign: Campaign,
+): RequirementOutcome {
   const transcript = norm(ctx.transcriptText);
   const post = norm(`${ctx.title ?? ""} ${ctx.description ?? ""} ${ctx.hashtags ?? ""}`);
   const mandatory = req.type === "required" || req.type === "prohibited";
@@ -108,7 +122,11 @@ function evaluate(req: CampaignRequirement, ctx: ClipCampaignContext, campaign: 
     result: req.type === "review" ? "review" : "pass",
     evidence,
   });
-  const review = (evidence: string): RequirementOutcome => ({ requirement: req, result: "review", evidence });
+  const review = (evidence: string): RequirementOutcome => ({
+    requirement: req,
+    result: "review",
+    evidence,
+  });
   const c = req.check;
   const dur = Math.max(0, ctx.endSec - ctx.startSec);
 
@@ -118,16 +136,24 @@ function evaluate(req: CampaignRequirement, ctx: ClipCampaignContext, campaign: 
         const tags = (c.values ?? []).map((v) => v.toLowerCase());
         const missing = tags.filter((t) => !post.includes(t));
         if (req.type === "prohibited")
-          return missing.length < tags.length ? miss("A prohibited hashtag is present.") : ok("No prohibited hashtag.");
+          return missing.length < tags.length
+            ? miss("A prohibited hashtag is present.")
+            : ok("No prohibited hashtag.");
         return missing.length
-          ? miss(`Missing ${missing.join(" ")}`, { label: `Add ${missing.join(" ")}`, hashtags: missing })
+          ? miss(`Missing ${missing.join(" ")}`, {
+              label: `Add ${missing.join(" ")}`,
+              hashtags: missing,
+            })
           : ok(`Contains ${tags.join(" ")}`);
       }
       case "account": {
         const tags = (c.values ?? []).map((v) => v.toLowerCase());
         const missing = tags.filter((t) => !post.includes(t));
         return missing.length
-          ? miss(`Missing ${missing.join(" ")}`, { label: `Add ${missing.join(" ")}`, hashtags: missing })
+          ? miss(`Missing ${missing.join(" ")}`, {
+              label: `Add ${missing.join(" ")}`,
+              hashtags: missing,
+            })
           : ok(`Mentions ${tags.join(" ")}`);
       }
       case "phrase": {
@@ -138,17 +164,26 @@ function evaluate(req: CampaignRequirement, ctx: ClipCampaignContext, campaign: 
           return found.length ? miss(`Contains "${found[0]}"`) : ok("Phrase not present.");
         return found.length === vals.length
           ? ok(`Found "${vals.join('", "')}"`)
-          : miss(`"${vals.filter((v) => !found.includes(v)).join('", "')}" not found in transcript or post text`, {
-              label: `Add "${vals[0]}" to the description`,
-              descriptionAppend: vals.filter((v) => !found.includes(v)).join(" "),
-            });
+          : miss(
+              `"${vals.filter((v) => !found.includes(v)).join('", "')}" not found in transcript or post text`,
+              {
+                label: `Add "${vals[0]}" to the description`,
+                descriptionAppend: vals.filter((v) => !found.includes(v)).join(" "),
+              },
+            );
       }
       case "hook-time": {
         const limit = c.seconds ?? 3;
         const words = clipWords(ctx);
-        if (!words.length) return review("No word timing for this clip — can't verify hook timing.");
+        if (!words.length)
+          return review("No word timing for this clip — can't verify hook timing.");
         if (c.values?.length) {
-          const early = norm(words.filter((w) => w.startSec - ctx.startSec <= limit).map((w) => w.text).join(" "));
+          const early = norm(
+            words
+              .filter((w) => w.startSec - ctx.startSec <= limit)
+              .map((w) => w.text)
+              .join(" "),
+          );
           const hit = c.values.some((v) => early.includes(norm(v)));
           return hit
             ? ok(`"${c.values[0]}" is said within ${limit}s`)
@@ -170,7 +205,9 @@ function evaluate(req: CampaignRequirement, ctx: ClipCampaignContext, campaign: 
       case "aspect": {
         const want = c.values?.[0];
         if (!ctx.aspect || !want) return review("Output format unknown.");
-        return ctx.aspect === want ? ok(`Format is ${want}`) : miss(`Format is ${ctx.aspect}, campaign wants ${want}`);
+        return ctx.aspect === want
+          ? ok(`Format is ${want}`)
+          : miss(`Format is ${ctx.aspect}, campaign wants ${want}`);
       }
       case "language": {
         const want = c.values?.[0];
@@ -183,7 +220,9 @@ function evaluate(req: CampaignRequirement, ctx: ClipCampaignContext, campaign: 
         return ctx.captionsEnabled ? ok("Captions are on") : miss("Captions are off");
       case "forbidden-words": {
         const hit = PROFANITY.find((p) => new RegExp(`\\b${p}`, "i").test(transcript));
-        return hit ? miss(`Transcript contains a profanity ("${hit[0]}…")`) : ok("No listed profanity in transcript");
+        return hit
+          ? miss(`Transcript contains a profanity ("${hit[0]}…")`)
+          : ok("No listed profanity in transcript");
       }
       case "source": {
         const list = campaign.approvedSources.map((s) => s.toLowerCase());
@@ -199,17 +238,28 @@ function evaluate(req: CampaignRequirement, ctx: ClipCampaignContext, campaign: 
   // Semantic requirements: optional AI evidence, otherwise keyword evidence → review.
   if (ctx.ai) {
     if (ctx.ai.violated.includes(req.id))
-      return review(`AI flagged a possible ${req.type === "prohibited" ? "violation" : "miss"} — please confirm.`);
+      return review(
+        `AI flagged a possible ${req.type === "prohibited" ? "violation" : "miss"} — please confirm.`,
+      );
     if (ctx.ai.met.includes(req.id))
       return mandatory
-        ? { requirement: req, result: "review", evidence: "AI thinks this is satisfied — please confirm." }
+        ? {
+            requirement: req,
+            result: "review",
+            evidence: "AI thinks this is satisfied — please confirm.",
+          }
         : ok("AI thinks this is satisfied.");
   }
   const kw = keywords(req.text);
   const hits = kw.filter((k) => transcript.includes(k));
   if (req.type === "prohibited")
-    return review(hits.length ? `Transcript mentions "${hits[0]}" — check the footage.` : "Needs a visual/manual check.");
-  if (hits.length) return review(`Transcript mentions ${hits.slice(0, 3).join(", ")} — confirm it matches.`);
+    return review(
+      hits.length
+        ? `Transcript mentions "${hits[0]}" — check the footage.`
+        : "Needs a visual/manual check.",
+    );
+  if (hits.length)
+    return review(`Transcript mentions ${hits.slice(0, 3).join(", ")} — confirm it matches.`);
   return req.type === "recommended"
     ? { requirement: req, result: "unmet", evidence: "No evidence found in the transcript." }
     : review("Can't verify from the transcript — needs your review.");
@@ -232,16 +282,21 @@ export function evaluateClipForCampaign(
     den += w;
   }
   let fit = den ? Math.round((num / den) * 100) : null;
-  if (fit !== null && ctx.ai) fit = Math.round(fit * 0.7 + Math.min(100, Math.max(0, ctx.ai.fit)) * 0.3);
+  if (fit !== null && ctx.ai)
+    fit = Math.round(fit * 0.7 + Math.min(100, Math.max(0, ctx.ai.fit)) * 0.3);
   const mandatoryFail = outcomes.some(
-    (o) => o.result === "fail" && (o.requirement.type === "required" || o.requirement.type === "prohibited"),
+    (o) =>
+      o.result === "fail" &&
+      (o.requirement.type === "required" || o.requirement.type === "prohibited"),
   );
   const anyReview = outcomes.some((o) => o.result === "review");
   return {
     status: mandatoryFail ? "FAIL" : anyReview ? "REVIEW" : "PASS",
     fit,
     outcomes,
-    strengths: outcomes.filter((o) => o.result === "pass").map((o) => `${o.requirement.text} — ${o.evidence}`),
+    strengths: outcomes
+      .filter((o) => o.result === "pass")
+      .map((o) => `${o.requirement.text} — ${o.evidence}`),
     issues: outcomes
       .filter((o) => o.result !== "pass")
       .map((o) => `${o.requirement.text} — ${o.evidence}`),
@@ -263,7 +318,9 @@ export function parseAiAssessment(raw: string, campaign: Campaign): AiClipAssess
       fit: Math.round(Math.min(100, Math.max(0, fit))),
       met: list(o["met"]),
       violated: list(o["violated"]),
-      notes: Array.isArray(o["notes"]) ? o["notes"].map((n) => String(n).slice(0, 120)).slice(0, 4) : [],
+      notes: Array.isArray(o["notes"])
+        ? o["notes"].map((n) => String(n).slice(0, 120)).slice(0, 4)
+        : [],
     };
   } catch {
     return null;
